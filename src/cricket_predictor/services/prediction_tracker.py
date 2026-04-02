@@ -114,6 +114,14 @@ class PredictionTrackerService:
             result = svc.predict_match(request)
             probs = result["winning_probability"]
 
+            # Generate AI analysis via Gemini LLM
+            ai_analysis = self._generate_ai_analysis(
+                match, team_a, team_b, team_a_form, team_b_form,
+                team_a_bat, team_b_bat, team_a_bowl, team_b_bowl,
+                venue_adv, result["predicted_winner"],
+                max(probs.values()), active_overrides,
+            )
+
             self._db.save_prediction(
                 match_id=match["match_id"],
                 team_a=team_a,
@@ -125,6 +133,7 @@ class PredictionTrackerService:
                 team_b_probability=probs.get(team_b, 0.5) / 100,
                 confidence_score=result["confidence_score"],
                 explanation=result.get("explanation", ""),
+                ai_analysis=ai_analysis or "",
             )
             log.info(
                 "Saved prediction for %s: %s vs %s → %s (%.0f%%)",
@@ -203,6 +212,64 @@ class PredictionTrackerService:
 
     def get_accuracy_stats(self) -> dict:
         return self._db.get_accuracy_stats()
+
+    # ------------------------------------------------------------------
+    # Gemini AI analysis
+    # ------------------------------------------------------------------
+
+    def _generate_ai_analysis(
+        self,
+        match: dict,
+        team_a: str,
+        team_b: str,
+        ta_form: float,
+        tb_form: float,
+        ta_bat: float,
+        tb_bat: float,
+        ta_bowl: float,
+        tb_bowl: float,
+        venue_adv: float,
+        predicted_winner: str,
+        win_pct: float,
+        active_overrides: list[dict],
+    ) -> str | None:
+        """Call Gemini to generate a pre-match analysis."""
+        from cricket_predictor.providers.gemini_provider import generate_match_analysis
+
+        # Build injury summary from active overrides
+        injury_notes = []
+        other_notes = []
+        for ov in active_overrides:
+            p = ov.get("parsed", {})
+            desc = p.get("description", ov.get("note", ""))
+            if "injur" in desc.lower() or "unavailable" in desc.lower() or "miss" in desc.lower():
+                injury_notes.append(desc)
+            elif desc:
+                other_notes.append(desc)
+
+        context = {
+            "team_a": team_a,
+            "team_b": team_b,
+            "venue": match.get("venue", ""),
+            "match_date": match.get("match_date", ""),
+            "team_a_batting": ta_bat,
+            "team_b_batting": tb_bat,
+            "team_a_bowling": ta_bowl,
+            "team_b_bowling": tb_bowl,
+            "team_a_form": ta_form,
+            "team_b_form": tb_form,
+            "venue_advantage": venue_adv,
+            "predicted_winner": predicted_winner,
+            "win_probability": win_pct,
+            "injuries": "; ".join(injury_notes) if injury_notes else "None reported",
+            "overrides": "; ".join(other_notes) if other_notes else "None",
+        }
+
+        try:
+            return generate_match_analysis(context)
+        except Exception as exc:
+            log.warning("Gemini analysis failed for %s: %s", match.get("match_id"), exc)
+            return None
 
     # ------------------------------------------------------------------
     # Override management (injuries, pitch notes, etc.)

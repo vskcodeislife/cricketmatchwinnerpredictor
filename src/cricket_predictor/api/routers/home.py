@@ -34,6 +34,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
         ta_pct = round(next_pred.get("team_a_probability", 0.5) * 100, 1)
         tb_pct = round(100 - ta_pct, 1)
         explanation = next_pred.get("explanation", "")
+        ai_analysis = next_pred.get("ai_analysis", "") or ""
         # Strip toss-related lines — toss is unknown before match starts
         explanation = "; ".join(
             part for part in explanation.split("; ")
@@ -76,6 +77,31 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
             {f'<p class="text-gray-500 text-xs mt-3 text-center italic">{explanation}</p>' if explanation else ""}
           </div>
         </div>"""
+
+        # AI Analysis panel (Gemini)
+        if ai_analysis:
+            # Convert bullet points to HTML list items
+            lines = [ln.strip() for ln in ai_analysis.splitlines() if ln.strip()]
+            li_items = ""
+            for ln in lines:
+                # Strip leading bullet characters (•, -, *, numbered)
+                clean = ln.lstrip("•-*0123456789.) ").strip()
+                if clean:
+                    li_items += f'<li class="text-gray-700 text-sm leading-relaxed">{clean}</li>\n'
+
+            next_html += f"""
+        <div class="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden mt-4">
+          <div class="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
+            <span class="text-lg">🤖</span>
+            <h2 class="font-semibold text-gray-700">AI Match Analysis</h2>
+            <span class="ml-auto text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-medium">Powered by Gemini</span>
+          </div>
+          <div class="px-6 py-5">
+            <ul class="space-y-3 list-disc list-inside">
+              {li_items}
+            </ul>
+          </div>
+        </div>"""
     else:
         next_html = """
         <div class="bg-white rounded-2xl shadow border border-gray-100 p-8 text-center text-gray-500">
@@ -89,7 +115,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
     future_matches = [m for m in upcoming if m.get("match_date", "") > today][:7]
 
     upcoming_rows = ""
-    for m in future_matches:
+    for idx, m in enumerate(future_matches):
         u_ta = m.get("team_a", "")
         u_tb = m.get("team_b", "")
         u_venue = m.get("venue", "")
@@ -97,12 +123,21 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
         u_winner = m.get("predicted_winner") or "—"
         u_ta_pct = round((m.get("team_a_probability") or 0.5) * 100, 1)
         u_tb_pct = round(100 - u_ta_pct, 1)
+        u_analysis = (m.get("ai_analysis") or "").strip()
         winner_cls = "text-indigo-700 font-semibold" if u_winner == u_ta else "text-purple-700 font-semibold"
         bar_a = int(u_ta_pct)
+        analysis_btn = ""
+        analysis_row = ""
+        if u_analysis:
+            analysis_btn = f'<button onclick="document.getElementById(\'ai-{idx}\').classList.toggle(\'hidden\')" class="ml-2 text-[10px] bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full hover:bg-purple-100 transition cursor-pointer">🤖 AI</button>'
+            # Convert to short HTML
+            a_lines = [ln.lstrip("•-*0123456789.) ").strip() for ln in u_analysis.splitlines() if ln.strip()]
+            a_html = " ".join(f"<span>• {l}</span>" for l in a_lines if l)
+            analysis_row = f'<tr id="ai-{idx}" class="hidden bg-purple-50/50"><td colspan="5" class="px-4 py-3 text-xs text-gray-600 leading-relaxed">{a_html}</td></tr>'
         upcoming_rows += f"""
         <tr class="border-b border-gray-100 hover:bg-gray-50 transition">
           <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{u_date}</td>
-          <td class="px-4 py-3 text-sm font-medium text-gray-800 whitespace-nowrap">{u_ta} <span class="text-gray-400 font-normal">vs</span> {u_tb}</td>
+          <td class="px-4 py-3 text-sm font-medium text-gray-800 whitespace-nowrap">{u_ta} <span class="text-gray-400 font-normal">vs</span> {u_tb}{analysis_btn}</td>
           <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap hidden md:table-cell">{u_venue}</td>
           <td class="px-4 py-3">
             <div class="flex h-2 rounded-full overflow-hidden w-24">
@@ -114,7 +149,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
             </div>
           </td>
           <td class="px-4 py-3 text-sm {winner_cls} whitespace-nowrap">{u_winner}</td>
-        </tr>"""
+        </tr>{analysis_row}"""
 
     upcoming_section = f"""
     <div class="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
@@ -251,7 +286,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
         <span class="text-3xl">🏏</span>
         <div>
           <h1 class="text-white text-xl font-bold">Cricket Predictor</h1>
-          <p class="text-indigo-200 text-xs">IPL 2026 · AI-powered · Self-learning</p>
+          <p class="text-indigo-200 text-xs">IPL 2026 · AI-powered · Self-learning · Gemini Analysis</p>
         </div>
       </div>
       <span class="text-indigo-200 text-xs">Auto-refresh every 5 min</span>
@@ -325,7 +360,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
   </main>
 
   <footer class="text-center text-xs text-gray-400 py-6">
-    Cricket Predictor · Powered by CricSheet &amp; Cricmetric · Deployed on Render
+    Cricket Predictor · Powered by CricSheet, Cricmetric &amp; Gemini AI · Deployed on Render
   </footer>
 
 </body>

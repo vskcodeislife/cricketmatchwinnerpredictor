@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # --- Prediction tracker (upcoming matches + self-learning) ---
     tracker_interval_seconds: int = Field(default=3600, ge=60, description="How often to check results and retrain (seconds)")
 
+    # --- Gemini LLM analysis ---
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_prefix="CRICKET_PREDICTOR_",

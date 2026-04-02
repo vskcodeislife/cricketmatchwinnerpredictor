@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS match_predictions (
     team_b_probability  REAL    NOT NULL,
     confidence_score    REAL    NOT NULL,
     explanation         TEXT,
+    ai_analysis         TEXT,
     actual_winner       TEXT,
     is_correct          INTEGER,          -- NULL=pending, 1=correct, 0=wrong
     created_at          TEXT    NOT NULL
@@ -66,6 +67,10 @@ class PredictionsDB:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_DDL)
+            # Migrate existing DBs that lack ai_analysis column
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(match_predictions)").fetchall()}
+            if "ai_analysis" not in cols:
+                conn.execute("ALTER TABLE match_predictions ADD COLUMN ai_analysis TEXT")
 
     @contextmanager
     def _connect(self) -> Generator[sqlite3.Connection, None, None]:
@@ -93,6 +98,7 @@ class PredictionsDB:
         team_b_probability: float,
         confidence_score: float,
         explanation: str = "",
+        ai_analysis: str = "",
     ) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -100,13 +106,13 @@ class PredictionsDB:
                 INSERT OR IGNORE INTO match_predictions
                     (match_id, team_a, team_b, venue, match_date, predicted_winner,
                      team_a_probability, team_b_probability, confidence_score,
-                     explanation, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     explanation, ai_analysis, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     match_id, team_a, team_b, venue, match_date,
                     predicted_winner, team_a_probability, team_b_probability,
-                    confidence_score, explanation,
+                    confidence_score, explanation, ai_analysis,
                     datetime.now(tz=timezone.utc).isoformat(),
                 ),
             )
