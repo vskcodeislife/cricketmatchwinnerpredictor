@@ -1,15 +1,13 @@
-"""Gemini LLM provider — generates pre-match analysis via the REST API.
+"""Azure OpenAI LLM provider — generates pre-match analysis via GPT-4.1.
 
-Uses httpx (already a project dependency) to call the Gemini generateContent
-endpoint directly, avoiding the heavy google-generativeai SDK and its
-dependency issues on Python 3.14.
+Uses httpx (already a project dependency) to call the Azure OpenAI
+chat/completions endpoint.
 """
 
 from __future__ import annotations
 
 import logging
 import ssl
-from functools import lru_cache
 
 import httpx
 
@@ -17,20 +15,17 @@ from cricket_predictor.config.settings import get_settings
 
 log = logging.getLogger(__name__)
 
-_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 _TIMEOUT = 30  # seconds
 
 
-def _get_ssl_context() -> ssl.SSLContext:
+def _get_ssl_context():
     """Use truststore for system CA certs when available (macOS Keychain, etc.)."""
     try:
         import truststore
-        ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        return ctx
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     except Exception:
         pass
-    # Fallback: standard Python SSL (works on Render / Linux)
-    return True  # type: ignore[return-value]  # httpx accepts True for default verification
+    return True  # httpx default verification
 
 
 def _build_prompt(match_context: dict) -> str:
@@ -57,9 +52,7 @@ def _build_prompt(match_context: dict) -> str:
     elif venue_adv < 0:
         home_note = f"{team_b} has home advantage at this venue."
 
-    return f"""You are an expert IPL cricket analyst. Provide a concise pre-match analysis for the upcoming IPL 2026 match.
-
-**Match:** {team_a} vs {team_b}
+    return f"""**Match:** {team_a} vs {team_b}
 **Date:** {match_date}
 **Venue:** {venue}
 {f'**Home Advantage:** {home_note}' if home_note else ''}
@@ -83,37 +76,50 @@ Write a short pre-match analysis (4-5 bullet points) covering:
 Keep each bullet to 1-2 sentences. Use cricket terminology. Be specific to these teams. Do NOT use markdown headers. Use plain bullet points with • character."""
 
 
+_SYSTEM_PROMPT = (
+    "You are an expert IPL cricket analyst. Provide concise, insightful "
+    "pre-match analysis for IPL 2026 matches. Be specific and use cricket terminology."
+)
+
+
 def generate_match_analysis(match_context: dict) -> str | None:
-    """Call Gemini API to generate pre-match analysis.
+    """Call Azure OpenAI to generate pre-match analysis.
 
     Returns the analysis text, or None if the API call fails or no key is configured.
     """
     settings = get_settings()
-    api_key = settings.gemini_api_key
-    if not api_key:
-        log.warning("Gemini API key not configured — skipping analysis.")
+    api_key = settings.azure_openai_api_key
+    endpoint = settings.azure_openai_endpoint
+    api_version = settings.azure_openai_api_version
+    deployment = settings.azure_openai_deployment
+
+    if not api_key or not endpoint:
+        log.warning("Azure OpenAI not configured — skipping analysis.")
         return None
 
-    model = settings.gemini_model
-    url = _API_URL.format(model=model)
-    log.info("Gemini: calling %s for %s vs %s", model,
+    url = f"{endpoint}/openai/deployments/{deployment}/chat/completions"
+    log.info("Azure OpenAI: calling %s for %s vs %s", deployment,
              match_context.get("team_a"), match_context.get("team_b"))
 
     prompt = _build_prompt(match_context)
 
     payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 512,
-            "topP": 0.9,
-        },
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.7,
+        "max_tokens": 512,
     }
 
     try:
         resp = httpx.post(
             url,
-            params={"key": api_key},
+            params={"api-version": api_version},
+            headers={
+                "Content-Type": "application/json",
+                "api-key": api_key,
+            },
             json=payload,
             timeout=_TIMEOUT,
             verify=_get_ssl_context(),
@@ -121,25 +127,23 @@ def generate_match_analysis(match_context: dict) -> str | None:
         resp.raise_for_status()
         data = resp.json()
 
-        # Extract text from Gemini response
-        candidates = data.get("candidates", [])
-        if not candidates:
-            log.warning("Gemini returned no candidates.")
+        choices = data.get("choices", [])
+        if not choices:
+            log.warning("Azure OpenAI returned no choices.")
             return None
 
-        parts = candidates[0].get("content", {}).get("parts", [])
-        text = "".join(p.get("text", "") for p in parts).strip()
+        text = choices[0].get("message", {}).get("content", "").strip()
         if not text:
-            log.warning("Gemini returned empty text.")
+            log.warning("Azure OpenAI returned empty content.")
             return None
 
-        log.info("Gemini: got %d chars analysis for %s vs %s",
+        log.info("Azure OpenAI: got %d chars analysis for %s vs %s",
                  len(text), match_context.get("team_a"), match_context.get("team_b"))
         return text
 
     except httpx.HTTPStatusError as exc:
-        log.warning("Gemini API error %s: %s", exc.response.status_code, exc.response.text[:200])
+        log.warning("Azure OpenAI API error %s: %s", exc.response.status_code, exc.response.text[:200])
         return None
     except Exception as exc:
-        log.warning("Gemini call failed: %s", exc)
+        log.warning("Azure OpenAI call failed: %s", exc)
         return None

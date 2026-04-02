@@ -85,8 +85,9 @@ uvicorn cricket_predictor.api.app:app --reload --app-dir src
 - `CRICKET_PREDICTOR_ENABLE_LIVE_UPDATES=false`
 - `CRICKET_PREDICTOR_LIVE_REFRESH_SECONDS=60`
 - `CRICKET_PREDICTOR_LIVE_PROVIDER_BASE_URL=https://your-normalized-live-feed`
-- `CRICKET_PREDICTOR_GEMINI_API_KEY=your-gemini-api-key` — Enables AI-powered pre-match analysis via Google Gemini
-- `CRICKET_PREDICTOR_GEMINI_MODEL=gemini-2.0-flash` — Model used for analysis (default: gemini-2.0-flash)
+- `CRICKET_PREDICTOR_AZURE_OPENAI_API_KEY=your-key` — Enables AI pre-match analysis via Azure OpenAI GPT-4.1
+- `CRICKET_PREDICTOR_AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com`
+- `CRICKET_PREDICTOR_AZURE_OPENAI_DEPLOYMENT=gpt-4.1`
 
 ## Example Requests
 

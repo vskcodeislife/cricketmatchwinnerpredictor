@@ -33,9 +33,11 @@ class Settings(BaseSettings):
     # --- Prediction tracker (upcoming matches + self-learning) ---
     tracker_interval_seconds: int = Field(default=3600, ge=60, description="How often to check results and retrain (seconds)")
 
-    # --- Gemini LLM analysis ---
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
+    # --- Azure OpenAI LLM analysis ---
+    azure_openai_endpoint: str = "https://your-resource.cognitiveservices.azure.com"
+    azure_openai_api_key: str = ""
+    azure_openai_deployment: str = "gpt-4.1"
+    azure_openai_api_version: str = "2024-12-01-preview"
 
     model_config = SettingsConfigDict(
         env_file=".env",

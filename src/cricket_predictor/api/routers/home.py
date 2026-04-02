@@ -94,7 +94,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
           <div class="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
             <span class="text-lg">🤖</span>
             <h2 class="font-semibold text-gray-700">AI Match Analysis</h2>
-            <span class="ml-auto text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-medium">Powered by Gemini</span>
+            <span class="ml-auto text-[10px] bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full font-medium">Powered by GPT-4.1</span>
           </div>
           <div class="px-6 py-5">
             <ul class="space-y-3 list-disc list-inside">
@@ -286,7 +286,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
         <span class="text-3xl">🏏</span>
         <div>
           <h1 class="text-white text-xl font-bold">Cricket Predictor</h1>
-          <p class="text-indigo-200 text-xs">IPL 2026 · AI-powered · Self-learning · Gemini Analysis</p>
+          <p class="text-indigo-200 text-xs">IPL 2026 · AI-powered · Self-learning · GPT-4.1 Analysis</p>
         </div>
       </div>
       <span class="text-indigo-200 text-xs">Auto-refresh every 5 min</span>
@@ -360,7 +360,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
   </main>
 
   <footer class="text-center text-xs text-gray-400 py-6">
-    Cricket Predictor · Powered by CricSheet, Cricmetric &amp; Gemini AI · Deployed on Render
+    Cricket Predictor · Powered by CricSheet, Cricmetric &amp; GPT-4.1 · Deployed on Render
   </footer>
 
 </body>
@@ -432,7 +432,7 @@ async def admin_regenerate() -> RedirectResponse:
         pass
     # Force-clear ALL future predictions so they are re-generated with Gemini
     tracker._invalidate_future_predictions()
-    # Regenerate all predictions with current data + Gemini analysis
+    # Regenerate all predictions with current data + AI analysis
     tracker.predict_upcoming_matches()
     return RedirectResponse(url="/", status_code=303)
 
@@ -449,9 +449,9 @@ async def admin_debug() -> dict:
     overrides = tracker.get_active_overrides()
 
     return {
-        "gemini_key_set": bool(settings.gemini_api_key),
-        "gemini_key_prefix": settings.gemini_api_key[:10] + "..." if settings.gemini_api_key else "(empty)",
-        "gemini_model": settings.gemini_model,
+        "azure_key_set": bool(settings.azure_openai_api_key),
+        "azure_endpoint": settings.azure_openai_endpoint,
+        "azure_deployment": settings.azure_openai_deployment,
         "upcoming_count": len(upcoming),
         "overrides_count": len(overrides),
         "predictions": [
@@ -468,25 +468,35 @@ async def admin_debug() -> dict:
     }
 
 
-@router.get("/admin/test-gemini", include_in_schema=False)
-async def test_gemini() -> dict:
-    """Test a single Gemini API call and return the raw result or error."""
+@router.get("/admin/test-llm", include_in_schema=False)
+async def test_llm() -> dict:
+    """Test a single Azure OpenAI call and return the raw result or error."""
     import traceback
     from cricket_predictor.config.settings import get_settings
 
     settings = get_settings()
-    if not settings.gemini_api_key:
-        return {"status": "error", "message": "No API key configured"}
+    if not settings.azure_openai_api_key:
+        return {"status": "error", "message": "No Azure OpenAI API key configured"}
 
     try:
         import httpx
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent"
+        url = f"{settings.azure_openai_endpoint}/openai/deployments/{settings.azure_openai_deployment}/chat/completions"
         payload = {
-            "contents": [{"parts": [{"text": "Say 'Gemini is working' in one sentence."}]}],
-            "generationConfig": {"maxOutputTokens": 50},
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Say 'Azure OpenAI is working' in one sentence."},
+            ],
+            "temperature": 0.2,
+            "max_tokens": 50,
         }
-        resp = httpx.post(url, params={"key": settings.gemini_api_key}, json=payload, timeout=30)
+        resp = httpx.post(
+            url,
+            params={"api-version": settings.azure_openai_api_version},
+            headers={"Content-Type": "application/json", "api-key": settings.azure_openai_api_key},
+            json=payload,
+            timeout=30,
+        )
         if resp.status_code != 200:
             return {
                 "status": "error",
@@ -494,16 +504,13 @@ async def test_gemini() -> dict:
                 "response": resp.text[:500],
             }
         data = resp.json()
-        candidates = data.get("candidates", [])
-        text = ""
-        if candidates:
-            parts = candidates[0].get("content", {}).get("parts", [])
-            text = "".join(p.get("text", "") for p in parts)
+        choices = data.get("choices", [])
+        text = choices[0].get("message", {}).get("content", "") if choices else ""
         return {
             "status": "ok",
-            "model": settings.gemini_model,
+            "deployment": settings.azure_openai_deployment,
             "response_text": text,
-            "key_prefix": settings.gemini_api_key[:10] + "...",
+            "endpoint": settings.azure_openai_endpoint,
         }
     except Exception as exc:
         return {

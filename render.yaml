@@ -24,8 +24,12 @@ services:
         value: /app/data/synthetic
       - key: CRICKET_PREDICTOR_CRICSHEET_DATA_DIR
         value: /app/data/cricsheet
-      - key: CRICKET_PREDICTOR_GEMINI_API_KEY
-        value: AIzaSyBYag-zx1rYVPaFMzM6ddQ8rhP1h5-FatY
+      - key: CRICKET_PREDICTOR_AZURE_OPENAI_API_KEY
+        value: REPLACE_WITH_YOUR_AZURE_OPENAI_API_KEY
+      - key: CRICKET_PREDICTOR_AZURE_OPENAI_ENDPOINT
+        value: https://your-resource.cognitiveservices.azure.com
+      - key: CRICKET_PREDICTOR_AZURE_OPENAI_DEPLOYMENT
+        value: gpt-4.1
     disk:
       name: cricket-predictor-data
       mountPath: /app/data
