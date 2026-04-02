@@ -25,7 +25,7 @@ services:
       - key: CRICKET_PREDICTOR_CRICSHEET_DATA_DIR
         value: /app/data/cricsheet
       - key: CRICKET_PREDICTOR_GEMINI_API_KEY
-        value: AIzaSyAsZJ8cgkCriMCkHJFkM7V8-6lk3UtE0is
+        value: AIzaSyBYag-zx1rYVPaFMzM6ddQ8rhP1h5-FatY
     disk:
       name: cricket-predictor-data
       mountPath: /app/data

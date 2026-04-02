@@ -412,8 +412,12 @@ async def clear_overrides() -> RedirectResponse:
 @router.get("/admin/regenerate", include_in_schema=False)
 async def admin_regenerate() -> RedirectResponse:
     """Clear all future predictions, refresh injuries, and re-predict."""
+    from cricket_predictor.config.settings import get_settings
     from cricket_predictor.services.prediction_tracker import get_prediction_tracker
     from cricket_predictor.services.standings_service import get_standings_service
+
+    # Clear settings cache so fresh env vars (e.g. new Gemini key) are picked up
+    get_settings.cache_clear()
 
     tracker = get_prediction_tracker()
     # Refresh standings
@@ -462,3 +466,48 @@ async def admin_debug() -> dict:
             for p in upcoming
         ],
     }
+
+
+@router.get("/admin/test-gemini", include_in_schema=False)
+async def test_gemini() -> dict:
+    """Test a single Gemini API call and return the raw result or error."""
+    import traceback
+    from cricket_predictor.config.settings import get_settings
+
+    settings = get_settings()
+    if not settings.gemini_api_key:
+        return {"status": "error", "message": "No API key configured"}
+
+    try:
+        import httpx
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent"
+        payload = {
+            "contents": [{"parts": [{"text": "Say 'Gemini is working' in one sentence."}]}],
+            "generationConfig": {"maxOutputTokens": 50},
+        }
+        resp = httpx.post(url, params={"key": settings.gemini_api_key}, json=payload, timeout=30)
+        if resp.status_code != 200:
+            return {
+                "status": "error",
+                "http_status": resp.status_code,
+                "response": resp.text[:500],
+            }
+        data = resp.json()
+        candidates = data.get("candidates", [])
+        text = ""
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            text = "".join(p.get("text", "") for p in parts)
+        return {
+            "status": "ok",
+            "model": settings.gemini_model,
+            "response_text": text,
+            "key_prefix": settings.gemini_api_key[:10] + "...",
+        }
+    except Exception as exc:
+        return {
+            "status": "error",
+            "exception": str(exc),
+            "traceback": traceback.format_exc()[-500:],
+        }
