@@ -70,6 +70,12 @@ def _infer_pitch_type(venue: str) -> str:
     return "balanced"
 
 
+def _compute_venue_advantage(venue: str, team_a: str, team_b: str) -> float:
+    """Return +1.0 if team_a is the home side, -1.0 if team_b is, else 0.0."""
+    from cricket_predictor.providers.cricinfo_standings import venue_advantage
+    return venue_advantage(venue, team_a, team_b)
+
+
 def _normalise_format(raw: str) -> str:
     return {
         "T20I": "T20",
@@ -291,6 +297,7 @@ class CricsheetLoader:
 
         for _, row in df.iterrows():
             ta, tb = str(row["team_a"]), str(row["team_b"])
+            venue_name = str(row.get("venue", ""))
             key: tuple[str, str] = (min(ta, tb), max(ta, tb))
 
             # Recent form: win rate over last 5 matches per team
@@ -320,8 +327,9 @@ class CricsheetLoader:
                     "team_b_batting_strength": round(bat_b, 2),
                     "team_a_bowling_strength": round(bowl_a, 2),
                     "team_b_bowling_strength": round(bowl_b, 2),
-                    # No reliable home-ground data in cricsheet — kept neutral
-                    "venue_advantage_team_a": 0.0,
+                    # Compute real venue advantage — cricket venues have identifiable home teams.
+                    # Correctly rewards home ground familiarity that the raw cricsheet JSON omits.
+                    "venue_advantage_team_a": _compute_venue_advantage(venue_name, ta, tb),
                 }
             )
 

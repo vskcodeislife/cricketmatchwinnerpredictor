@@ -17,7 +17,7 @@ _STATUS_BADGE = {
 }
 
 
-def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict) -> str:
+def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, upcoming: list[dict]) -> str:
     accuracy = stats.get("accuracy_pct", 0.0)
     total = stats.get("total", 0)
     correct = stats.get("correct", 0)
@@ -82,6 +82,58 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict) -
           <p class="text-4xl mb-2">🏟️</p>
           <p class="font-medium">No upcoming match found — check back soon</p>
         </div>"""
+
+    # ── Upcoming match cards ───────────────────────────────
+    upcoming_cards = ""
+    # Skip today's match (already shown in Next Match section)
+    from datetime import date
+    today = date.today().isoformat()
+    future_matches = [m for m in upcoming if m.get("match_date", "") > today][:7]
+
+    for m in future_matches:
+        u_ta = m.get("team_a", "")
+        u_tb = m.get("team_b", "")
+        u_venue = m.get("venue", "")
+        u_date = m.get("match_date", "")
+        u_winner = m.get("predicted_winner") or "—"
+        u_ta_pct = round((m.get("team_a_probability") or 0.5) * 100, 1)
+        u_tb_pct = round(100 - u_ta_pct, 1)
+        winner_cls = "text-indigo-700" if u_winner == u_ta else "text-purple-700"
+        upcoming_cards += f"""
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">📅 {u_date}</span>
+            <span class="text-xs text-gray-400 truncate max-w-[140px]">📍 {u_venue}</span>
+          </div>
+          <div class="flex items-center justify-between gap-2 mb-3">
+            <span class="font-semibold text-gray-800 text-sm leading-tight flex-1">{u_ta}</span>
+            <span class="text-gray-400 text-xs font-medium shrink-0">vs</span>
+            <span class="font-semibold text-gray-800 text-sm leading-tight flex-1 text-right">{u_tb}</span>
+          </div>
+          <div class="mb-2">
+            <div class="flex justify-between text-xs text-gray-400 mb-1">
+              <span>{u_ta_pct}%</span><span>{u_tb_pct}%</span>
+            </div>
+            <div class="flex h-2 rounded-full overflow-hidden">
+              <div class="bg-indigo-400" style="width:{u_ta_pct}%"></div>
+              <div class="bg-purple-300 flex-1"></div>
+            </div>
+          </div>
+          <p class="text-xs text-center mt-2">
+            Predicted: <span class="font-semibold {winner_cls}">{u_winner}</span>
+          </p>
+        </div>"""
+
+    upcoming_section = f"""
+    <div class="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h2 class="font-semibold text-gray-700">📅 Upcoming Matches &amp; Predictions</h2>
+        <p class="text-xs text-gray-400 mt-0.5">Next 7 fixtures · pre-match win probability · 7:30 PM IST</p>
+      </div>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
+        {upcoming_cards if upcoming_cards else '<p class="text-gray-400 text-sm col-span-4 py-4 text-center">No upcoming fixtures found</p>'}
+      </div>
+    </div>""" if future_matches else ""
 
     # ── History rows ──────────────────────────────────────
     rows_html = ""
@@ -190,6 +242,8 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict) -
       {next_html}
     </div>
 
+    {upcoming_section}
+
     <!-- Prediction history -->
     <div class="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
       <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -233,5 +287,6 @@ async def homepage() -> HTMLResponse:
     next_pred = tracker.get_next_match_prediction()
     history = tracker.get_recent_history(10)
     stats = tracker.get_accuracy_stats()
-    html = _render_homepage(next_pred, history, stats)
+    upcoming = tracker._db.get_upcoming_predictions(7)
+    html = _render_homepage(next_pred, history, stats, upcoming)
     return HTMLResponse(content=html)

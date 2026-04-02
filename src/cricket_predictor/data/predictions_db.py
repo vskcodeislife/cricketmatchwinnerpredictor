@@ -170,6 +170,17 @@ class PredictionsDB:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_upcoming_predictions(self, limit: int = 7) -> list[dict]:
+        """Return saved predictions for future matches (today and beyond)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT * FROM match_predictions
+                   WHERE match_date >= date('now')
+                   ORDER BY match_date ASC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def get_next_unpredicted_match(self, scheduled_matches: list[dict]) -> dict | None:
         """Return the first scheduled match that has no prediction yet."""
         with self._connect() as conn:

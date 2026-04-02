@@ -18,8 +18,13 @@ from pathlib import Path
 from cricket_predictor.api.schemas import MatchPredictionRequest
 from cricket_predictor.config.settings import Settings, get_settings
 from cricket_predictor.data.predictions_db import PredictionsDB
+from cricket_predictor.providers.cricinfo_standings import venue_advantage
 from cricket_predictor.providers.ipl_schedule import IPLScheduleProvider
 from cricket_predictor.services.standings_service import get_standings_service
+
+# Only trust NRR-derived strengths once a team has played this many games;
+# smaller samples produce wild swings that mislead the model.
+_MIN_GAMES_FOR_NRR = 3
 
 log = logging.getLogger(__name__)
 
@@ -61,12 +66,22 @@ class PredictionTrackerService:
             team_b = match["team_b"]
 
             # Pull live standings data for team context
+            ta_standing = standings.get_team(team_a)
+            tb_standing = standings.get_team(team_b)
+
+            # NRR is meaningless until a team has played a few games; fall back
+            # to neutral (65.0) to avoid early-season noise corrupting the model.
+            ta_games = ta_standing.played if ta_standing else 0
+            tb_games = tb_standing.played if tb_standing else 0
             team_a_form = standings.recent_form(team_a)
             team_b_form = standings.recent_form(team_b)
-            team_a_bat = standings.batting_strength(team_a)
-            team_b_bat = standings.batting_strength(team_b)
-            team_a_bowl = standings.bowling_strength(team_a)
-            team_b_bowl = standings.bowling_strength(team_b)
+            team_a_bat  = standings.batting_strength(team_a)  if ta_games >= _MIN_GAMES_FOR_NRR else 65.0
+            team_b_bat  = standings.batting_strength(team_b)  if tb_games >= _MIN_GAMES_FOR_NRR else 65.0
+            team_a_bowl = standings.bowling_strength(team_a)  if ta_games >= _MIN_GAMES_FOR_NRR else 65.0
+            team_b_bowl = standings.bowling_strength(team_b)  if tb_games >= _MIN_GAMES_FOR_NRR else 65.0
+
+            # Home ground advantage (+1.0 = team_a home, -1.0 = team_b home)
+            venue_adv = venue_advantage(match["venue"], team_a, team_b)
 
             request = MatchPredictionRequest(
                 team_a=team_a,
@@ -83,7 +98,7 @@ class PredictionTrackerService:
                 team_a_bowling_strength=team_a_bowl,
                 team_b_bowling_strength=team_b_bowl,
                 head_to_head_win_pct_team_a=0.5,
-                venue_advantage_team_a=0.0,
+                venue_advantage_team_a=venue_adv,
                 night_match=True,
             )
 

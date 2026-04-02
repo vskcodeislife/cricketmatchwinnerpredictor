@@ -217,6 +217,51 @@ class CricinfoStandingsProvider:
 
         return " ".join(results[-5:]) if results else ""
 
+    def _derive_batting_bowling(
+        self, team_id: str, matches: list[dict[str, Any]]
+    ) -> tuple[float, float]:
+        """Return (batting_strength, bowling_strength) derived from match scores.
+
+        batting_strength  = avg runs scored per innings, scaled to 40–90.
+        bowling_strength  = avg runs conceded per innings, inverted and scaled
+                            to 40–90 (lower conceded → higher bowling strength).
+
+        T20 calibration: 120 → 40, 220 → 90 for batting;
+                         120 → 90, 220 → 40 for bowling (fewer conceded = better).
+        Returns (65.0, 65.0) when no score data is available so the model
+        gets a neutral prior rather than noise.
+        """
+        scored: list[int] = []
+        conceded: list[int] = []
+
+        for match in matches:
+            runs_by_team: dict[str, int] = {}
+            for s in match.get("score", []):
+                tid = str(s.get("team_id", ""))
+                innings = s.get("innings", [])
+                runs = sum(int(inn.get("runs_scored", 0)) for inn in innings)
+                runs_by_team[tid] = runs_by_team.get(tid, 0) + runs
+
+            if team_id in runs_by_team:
+                scored.append(runs_by_team[team_id])
+                for tid, runs in runs_by_team.items():
+                    if tid != team_id:
+                        conceded.append(runs)
+
+        if not scored:
+            return 65.0, 65.0
+
+        avg_scored   = sum(scored)   / len(scored)
+        avg_conceded = sum(conceded) / len(conceded) if conceded else avg_scored
+
+        # Clamp to realistic T20 range 100–230 before scaling
+        avg_scored   = max(100.0, min(230.0, avg_scored))
+        avg_conceded = max(100.0, min(230.0, avg_conceded))
+
+        bat  = round(40.0 + (avg_scored   - 100.0) / 130.0 * 50.0, 2)
+        bowl = round(40.0 + (230.0 - avg_conceded) / 130.0 * 50.0, 2)
+        return bat, bowl
+
     def _parse(self, html: str) -> list[TeamStanding]:
         data = self._extract_ssr_json(html)
         raw_teams: list[dict[str, Any]] = data.get("standingsData", [{}])[0].get("teams", [])
@@ -247,11 +292,13 @@ class CricinfoStandingsProvider:
             # recent_form_pct: wins / played; fall back to W/P ratio
             recent_form_pct = (won / played) if played > 0 else 0.5
 
-            # Batting/bowling strength proxies from NRR and win rate
-            # NRR range roughly −5 to +5 → scale to 40–90
-            nrr_normalised = max(0.0, min(1.0, (nrr + 5.0) / 10.0))
-            batting_strength  = round(40.0 + nrr_normalised * 50.0, 2)
-            bowling_strength  = round(90.0 - nrr_normalised * 50.0, 2)
+            # Batting/bowling strength from actual runs scored/conceded.
+            # This separates the two dimensions correctly — NRR conflates them
+            # (e.g. SRH scored 201 but conceded quickly → bad NRR despite good
+            # batting) so using NRR as a proxy for bowling produces wrong signals.
+            batting_strength, bowling_strength = self._derive_batting_bowling(
+                team_id, t.get("matches", [])
+            )
 
             standings.append(
                 TeamStanding(
