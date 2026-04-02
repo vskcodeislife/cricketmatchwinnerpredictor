@@ -1,0 +1,26 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+
+# Model artifacts (large binary files — retrained at runtime)
+artifacts/models/*.joblib
+
+# Synthetic data (regenerated at startup)
+data/synthetic/*.csv
+
+# Cricsheet downloaded data (large; downloaded at runtime)
+data/cricsheet/
+*.zip
+
+# SQLite prediction database (runtime data)
+data/predictions.db
+
+# egg-info
+*.egg-info/
+
+# env overrides
+.env

@@ -1,0 +1,21 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Cricket Predictor API",
+			"type": "shell",
+			"command": ".venv/bin/uvicorn",
+			"args": [
+				"cricket_predictor.api.app:app",
+				"--reload",
+				"--reload-dir",
+				"src",
+				"--app-dir",
+				"src"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

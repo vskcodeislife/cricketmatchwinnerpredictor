@@ -1,0 +1,136 @@
+import asyncio
+import contextlib
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from cricket_predictor.api.routers.health import router as health_router
+from cricket_predictor.api.routers.home import router as home_router
+from cricket_predictor.api.routers.predict import router as predict_router
+from cricket_predictor.api.routers.standings import router as standings_router
+from cricket_predictor.config.settings import get_settings
+from cricket_predictor.services.prediction_service import get_prediction_service
+
+log = logging.getLogger(__name__)
+
+
+async def _live_refresh_loop(refresh_seconds: int) -> None:
+    service = get_prediction_service()
+    while True:
+        try:
+            await service.refresh_live_predictions()
+        except Exception:
+            pass
+        await asyncio.sleep(refresh_seconds)
+
+
+async def _cricsheet_update_loop(interval_seconds: int) -> None:
+    """Daily background loop: check cricsheet for new data, retrain if changed."""
+    from cricket_predictor.services.data_update_service import DataUpdateService
+
+    settings = get_settings()
+    while True:
+        try:
+            retrained = await asyncio.to_thread(DataUpdateService(settings).check_and_retrain)
+            if retrained:
+                get_prediction_service().reload_models()
+                log.info("Models hot-reloaded after cricsheet retrain.")
+        except Exception as exc:
+            log.warning("Cricsheet update cycle failed: %s", exc)
+        await asyncio.sleep(interval_seconds)
+
+
+async def _prediction_tracker_loop(interval_seconds: int) -> None:
+    """Periodically predict upcoming matches and check past results."""
+    from cricket_predictor.services.prediction_tracker import get_prediction_tracker
+
+    tracker = get_prediction_tracker()
+    while True:
+        try:
+            tracker.predict_upcoming_matches()
+            summary = tracker.check_results_and_learn()
+            if summary["updated"] or summary["retrained"]:
+                log.info("Tracker cycle: %s", summary)
+        except Exception as exc:
+            log.warning("Prediction tracker cycle failed: %s", exc)
+        await asyncio.sleep(interval_seconds)
+
+
+async def _standings_refresh_loop(interval_seconds: int) -> None:
+    """Periodic loop: refresh IPL standings from ESPN Cricinfo."""
+    from cricket_predictor.services.standings_service import get_standings_service
+
+    while True:
+        try:
+            await get_standings_service().refresh()
+        except Exception as exc:
+            log.warning("Standings refresh failed: %s", exc)
+        await asyncio.sleep(interval_seconds)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    settings = get_settings()
+    tasks: list[asyncio.Task] = []
+
+    # Standings — always try on startup so first prediction is accurate
+    if settings.enable_standings_refresh:
+        try:
+            from cricket_predictor.services.standings_service import get_standings_service
+            await get_standings_service().refresh()
+            log.info("Initial standings loaded.")
+        except Exception as exc:
+            log.warning("Initial standings fetch failed (will retry): %s", exc)
+        tasks.append(
+            asyncio.create_task(
+                _standings_refresh_loop(settings.standings_refresh_minutes * 60)
+            )
+        )
+
+    # Prediction tracker — make pre-match predictions + check results hourly
+    try:
+        from cricket_predictor.services.prediction_tracker import get_prediction_tracker
+        tracker = get_prediction_tracker()
+        tracker.predict_upcoming_matches()
+        log.info("Initial upcoming match predictions saved.")
+    except Exception as exc:
+        log.warning("Initial prediction tracker run failed: %s", exc)
+    tasks.append(
+        asyncio.create_task(_prediction_tracker_loop(settings.tracker_interval_seconds))
+    )
+
+    if settings.enable_live_updates:
+        await get_prediction_service().refresh_live_predictions()
+        tasks.append(asyncio.create_task(_live_refresh_loop(settings.live_refresh_seconds)))
+    if settings.enable_cricsheet_updates:
+        tasks.append(
+            asyncio.create_task(
+                _cricsheet_update_loop(settings.cricsheet_check_interval_hours * 3600)
+            )
+        )
+    try:
+        yield
+    finally:
+        for task in tasks:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+
+def create_app() -> FastAPI:
+    settings = get_settings()
+    app = FastAPI(
+        title=settings.app_name,
+        version=settings.app_version,
+        description="ML-backed cricket predictor with synthetic bootstrap data and live provider support.",
+        lifespan=lifespan,
+    )
+    app.include_router(home_router)
+    app.include_router(health_router)
+    app.include_router(predict_router)
+    app.include_router(standings_router)
+    return app
+
+
+app = create_app()

@@ -1,0 +1,1 @@
+"""Cricket predictor application package."""

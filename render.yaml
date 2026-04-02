@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: cricket-predictor-api
+    env: python
+    region: oregon
+    plan: starter        # $7/mo — always on, required for background loops
+    buildCommand: pip install -e .
+    startCommand: uvicorn cricket_predictor.api.app:app --host 0.0.0.0 --port $PORT --app-dir src
+    healthCheckPath: /health
+    envVars:
+      - key: CRICKET_PREDICTOR_ENABLE_STANDINGS_REFRESH
+        value: "true"
+      - key: CRICKET_PREDICTOR_STANDINGS_REFRESH_MINUTES
+        value: "30"
+      - key: CRICKET_PREDICTOR_ENABLE_CRICSHEET_UPDATES
+        value: "true"
+      - key: CRICKET_PREDICTOR_CRICSHEET_CHECK_INTERVAL_HOURS
+        value: "24"
+      - key: CRICKET_PREDICTOR_TRACKER_INTERVAL_SECONDS
+        value: "3600"
+      - key: CRICKET_PREDICTOR_MODEL_ARTIFACT_DIR
+        value: /app/data/models
+      - key: CRICKET_PREDICTOR_SYNTHETIC_DATA_DIR
+        value: /app/data/synthetic
+      - key: CRICKET_PREDICTOR_CRICSHEET_DATA_DIR
+        value: /app/data/cricsheet
+    disk:
+      name: cricket-predictor-data
+      mountPath: /app/data
+      sizeGB: 2

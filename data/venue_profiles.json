@@ -1,0 +1,119 @@
+{
+  "Eden Gardens": {
+    "avg_first_innings_score": 161.09,
+    "chase_win_pct": 0.5,
+    "spin_wicket_pct": 0.8166,
+    "pace_wicket_pct": 0.1834,
+    "boundary_rate": 0.4,
+    "spin_economy": 6.558,
+    "pace_economy": 8.382
+  },
+  "Wankhede Stadium": {
+    "avg_first_innings_score": 184.75,
+    "chase_win_pct": 0.4667,
+    "spin_wicket_pct": 0.7104,
+    "pace_wicket_pct": 0.2896,
+    "boundary_rate": 0.4,
+    "spin_economy": 8.5692,
+    "pace_economy": 9.6423
+  },
+  "MA Chidambaram Stadium": {
+    "avg_first_innings_score": 185.0,
+    "chase_win_pct": 0.5556,
+    "spin_wicket_pct": 0.6669,
+    "pace_wicket_pct": 0.3331,
+    "boundary_rate": 0.4,
+    "spin_economy": 8.1195,
+    "pace_economy": 10.1393
+  },
+  "M Chinnaswamy Stadium": {
+    "avg_first_innings_score": 159.56,
+    "chase_win_pct": 0.6667,
+    "spin_wicket_pct": 0.7378,
+    "pace_wicket_pct": 0.2622,
+    "boundary_rate": 0.4,
+    "spin_economy": 7.553,
+    "pace_economy": 8.8617
+  },
+  "Arun Jaitley Stadium": {
+    "avg_first_innings_score": 177.88,
+    "chase_win_pct": 0.5,
+    "spin_wicket_pct": 0.6575,
+    "pace_wicket_pct": 0.3425,
+    "boundary_rate": 0.4,
+    "spin_economy": 7.5901,
+    "pace_economy": 7.8958
+  },
+  "Rajiv Gandhi International Stadium": {
+    "avg_first_innings_score": 220.0,
+    "chase_win_pct": 0.5,
+    "spin_wicket_pct": 0.7171,
+    "pace_wicket_pct": 0.2829,
+    "boundary_rate": 0.4,
+    "spin_economy": 9.0304,
+    "pace_economy": 10.8865
+  },
+  "Narendra Modi Stadium": {
+    "avg_first_innings_score": 215.25,
+    "chase_win_pct": 0.5,
+    "spin_wicket_pct": 0.5628,
+    "pace_wicket_pct": 0.4372,
+    "boundary_rate": 0.4,
+    "spin_economy": 9.6907,
+    "pace_economy": 9.149
+  },
+  "Sawai Mansingh Stadium": {
+    "avg_first_innings_score": 164.0,
+    "chase_win_pct": 0.5,
+    "spin_wicket_pct": 0.7143,
+    "pace_wicket_pct": 0.2857,
+    "boundary_rate": 0.4,
+    "spin_economy": 6.0,
+    "pace_economy": 9.0484
+  },
+  "BRSABV Ekana Cricket Stadium": {
+    "avg_first_innings_score": 149.53,
+    "chase_win_pct": 0.5,
+    "spin_wicket_pct": 0.6708,
+    "pace_wicket_pct": 0.3292,
+    "boundary_rate": 0.4,
+    "spin_economy": 6.3111,
+    "pace_economy": 7.3165
+  },
+  "Himachal Pradesh Cricket Association Stadium": {
+    "avg_first_innings_score": 131.77,
+    "chase_win_pct": 0.5,
+    "spin_wicket_pct": 0.7257,
+    "pace_wicket_pct": 0.2743,
+    "boundary_rate": 0.3781,
+    "spin_economy": 6.7102,
+    "pace_economy": 7.5267
+  },
+  "ACA-VDCA Cricket Stadium": {
+    "avg_first_innings_score": 176.6,
+    "chase_win_pct": 0.75,
+    "spin_wicket_pct": 0.5667,
+    "pace_wicket_pct": 0.4333,
+    "boundary_rate": 0.4,
+    "spin_economy": 8.9427,
+    "pace_economy": 9.5726
+  },
+  "Raipur International Cricket Stadium": {
+    "avg_first_innings_score": 208.0,
+    "chase_win_pct": 0.5,
+    "spin_wicket_pct": 0.822,
+    "pace_wicket_pct": 0.178,
+    "boundary_rate": 0.4,
+    "spin_economy": 9.3036,
+    "pace_economy": 12.5625
+  },
+  "Punjab Cricket Association IS Bindra Stadium": {
+    "avg_first_innings_score": 170.13,
+    "chase_win_pct": 0.5,
+    "spin_wicket_pct": 0.7261,
+    "pace_wicket_pct": 0.2739,
+    "boundary_rate": 0.4,
+    "spin_economy": 7.5949,
+    "pace_economy": 9.1739
+  }
+}
