@@ -49,6 +49,14 @@ CREATE TABLE IF NOT EXISTS model_accuracy (
 INSERT OR IGNORE INTO model_accuracy (id, total_predictions, correct_predictions,
     wrong_since_last_retrain, updated_at)
 VALUES (1, 0, 0, 0, datetime('now'));
+
+CREATE TABLE IF NOT EXISTS match_overrides (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id    TEXT,           -- NULL = applies to all upcoming matches
+    note        TEXT NOT NULL,  -- raw user text
+    parsed_json TEXT NOT NULL,  -- JSON of {team, player, adjustment_type, factor}
+    created_at  TEXT NOT NULL
+);
 """
 
 
@@ -180,6 +188,39 @@ class PredictionsDB:
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Match overrides (injury notes, pitch reports, etc.)
+    # ------------------------------------------------------------------
+
+    def save_override(self, note: str, parsed: dict, match_id: str | None = None) -> int:
+        import json as _json
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            cur = conn.execute(
+                """INSERT INTO match_overrides (match_id, note, parsed_json, created_at)
+                   VALUES (?, ?, ?, ?)""",
+                (match_id, note.strip(), _json.dumps(parsed), now),
+            )
+            return cur.lastrowid  # type: ignore[return-value]
+
+    def get_active_overrides(self) -> list[dict]:
+        """Return all overrides ordered newest-first."""
+        import json as _json
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM match_overrides ORDER BY created_at DESC"
+            ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["parsed"] = _json.loads(d["parsed_json"])
+            result.append(d)
+        return result
+
+    def delete_override(self, override_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM match_overrides WHERE id = ?", (override_id,))
 
     def get_next_unpredicted_match(self, scheduled_matches: list[dict]) -> dict | None:
         """Return the first scheduled match that has no prediction yet."""

@@ -20,6 +20,7 @@ from cricket_predictor.config.settings import Settings, get_settings
 from cricket_predictor.data.predictions_db import PredictionsDB
 from cricket_predictor.providers.cricinfo_standings import venue_advantage
 from cricket_predictor.providers.ipl_schedule import IPLScheduleProvider
+from cricket_predictor.services.override_parser import apply_overrides
 from cricket_predictor.services.standings_service import get_standings_service
 
 # Only trust NRR-derived strengths once a team has played this many games;
@@ -79,6 +80,14 @@ class PredictionTrackerService:
             team_b_bat  = standings.batting_strength(team_b)  if tb_games >= _MIN_GAMES_FOR_NRR else 65.0
             team_a_bowl = standings.bowling_strength(team_a)  if ta_games >= _MIN_GAMES_FOR_NRR else 65.0
             team_b_bowl = standings.bowling_strength(team_b)  if tb_games >= _MIN_GAMES_FOR_NRR else 65.0
+
+            # Apply any active overrides (injuries, pitch notes, etc.)
+            active_overrides = self._db.get_active_overrides()
+            parsed_overrides = [o["parsed"] for o in active_overrides]
+            team_a_bat, team_b_bat, team_a_bowl, team_b_bowl = apply_overrides(
+                team_a, team_b, team_a_bat, team_b_bat, team_a_bowl, team_b_bowl,
+                parsed_overrides,
+            )
 
             # Home ground advantage (+1.0 = team_a home, -1.0 = team_b home)
             venue_adv = venue_advantage(match["venue"], team_a, team_b)
@@ -196,8 +205,40 @@ class PredictionTrackerService:
         return self._db.get_accuracy_stats()
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Override management (injuries, pitch notes, etc.)
     # ------------------------------------------------------------------
+
+    def add_override(self, note: str) -> list[dict]:
+        """Parse a free-text note and persist it.  Returns parsed adjustments."""
+        from cricket_predictor.services.override_parser import parse_override
+        parsed = parse_override(note)
+        if parsed:
+            for adj in parsed:
+                self._db.save_override(note=note, parsed=adj)
+        else:
+            # Store as an unrecognised note (no feature adjustments) so it shows
+            # in the UI for the user to see.
+            self._db.save_override(
+                note=note,
+                parsed={"type": "note", "team": None, "player": None,
+                        "role": None, "bowl_delta": 0.0, "bat_delta": 0.0,
+                        "description": f"📝 Note: {note}"},
+            )
+        # Delete future predictions so they are re-generated with the new overrides
+        self._invalidate_future_predictions()
+        return parsed
+
+    def get_active_overrides(self) -> list[dict]:
+        return self._db.get_active_overrides()
+
+    def delete_override(self, override_id: int) -> None:
+        self._db.delete_override(override_id)
+        self._invalidate_future_predictions()
+
+    def _invalidate_future_predictions(self) -> None:
+        """Delete all future predictions so they are re-generated with latest overrides."""
+        with self._db._connect() as conn:
+            conn.execute("DELETE FROM match_predictions WHERE match_date >= date('now')")
 
     def _fetch_cricsheet_results(self) -> dict[tuple[str, str, str], str]:
         """Parse recently-played cricsheet JSON files to extract match winners.
