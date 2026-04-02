@@ -372,3 +372,23 @@ async def clear_overrides() -> RedirectResponse:
     for ov in tracker.get_active_overrides():
         tracker.delete_override(ov["id"])
     return RedirectResponse(url="/", status_code=303)
+
+
+@router.get("/admin/regenerate", include_in_schema=False)
+async def admin_regenerate() -> RedirectResponse:
+    """Clear all future predictions, refresh injuries, and re-predict."""
+    import asyncio
+    from cricket_predictor.services.prediction_tracker import get_prediction_tracker
+    from cricket_predictor.services.standings_service import get_standings_service
+
+    tracker = get_prediction_tracker()
+    # Refresh standings
+    try:
+        await get_standings_service().refresh()
+    except Exception:
+        pass
+    # Refresh injury overrides (clears stale, fetches fresh, invalidates future)
+    tracker.refresh_injury_overrides()
+    # Regenerate all predictions with current data
+    tracker.predict_upcoming_matches()
+    return RedirectResponse(url="/", status_code=303)
