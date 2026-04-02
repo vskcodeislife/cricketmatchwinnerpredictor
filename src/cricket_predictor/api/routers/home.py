@@ -412,7 +412,6 @@ async def clear_overrides() -> RedirectResponse:
 @router.get("/admin/regenerate", include_in_schema=False)
 async def admin_regenerate() -> RedirectResponse:
     """Clear all future predictions, refresh injuries, and re-predict."""
-    import asyncio
     from cricket_predictor.services.prediction_tracker import get_prediction_tracker
     from cricket_predictor.services.standings_service import get_standings_service
 
@@ -422,8 +421,44 @@ async def admin_regenerate() -> RedirectResponse:
         await get_standings_service().refresh()
     except Exception:
         pass
-    # Refresh injury overrides (clears stale, fetches fresh, invalidates future)
-    tracker.refresh_injury_overrides()
-    # Regenerate all predictions with current data
+    # Refresh injury overrides (clears stale, fetches fresh)
+    try:
+        tracker.refresh_injury_overrides()
+    except Exception:
+        pass
+    # Force-clear ALL future predictions so they are re-generated with Gemini
+    tracker._invalidate_future_predictions()
+    # Regenerate all predictions with current data + Gemini analysis
     tracker.predict_upcoming_matches()
     return RedirectResponse(url="/", status_code=303)
+
+
+@router.get("/admin/debug", include_in_schema=False)
+async def admin_debug() -> dict:
+    """Debug endpoint showing config state and prediction diagnostics."""
+    from cricket_predictor.config.settings import get_settings
+    from cricket_predictor.services.prediction_tracker import get_prediction_tracker
+
+    settings = get_settings()
+    tracker = get_prediction_tracker()
+    upcoming = tracker._db.get_upcoming_predictions(7)
+    overrides = tracker.get_active_overrides()
+
+    return {
+        "gemini_key_set": bool(settings.gemini_api_key),
+        "gemini_key_prefix": settings.gemini_api_key[:10] + "..." if settings.gemini_api_key else "(empty)",
+        "gemini_model": settings.gemini_model,
+        "upcoming_count": len(upcoming),
+        "overrides_count": len(overrides),
+        "predictions": [
+            {
+                "match_id": p.get("match_id"),
+                "teams": f"{p.get('team_a')} vs {p.get('team_b')}",
+                "winner": p.get("predicted_winner"),
+                "ta_prob": round((p.get("team_a_probability") or 0.5) * 100, 1),
+                "has_ai_analysis": bool(p.get("ai_analysis")),
+                "ai_analysis_preview": (p.get("ai_analysis") or "")[:120],
+            }
+            for p in upcoming
+        ],
+    }

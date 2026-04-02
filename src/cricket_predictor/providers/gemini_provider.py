@@ -22,12 +22,15 @@ _TIMEOUT = 30  # seconds
 
 
 def _get_ssl_context() -> ssl.SSLContext:
-    """Use truststore for system CA certs (macOS Keychain, etc.)."""
+    """Use truststore for system CA certs when available (macOS Keychain, etc.)."""
     try:
         import truststore
-        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        return ctx
     except Exception:
-        return ssl.create_default_context()
+        pass
+    # Fallback: standard Python SSL (works on Render / Linux)
+    return True  # type: ignore[return-value]  # httpx accepts True for default verification
 
 
 def _build_prompt(match_context: dict) -> str:
@@ -88,11 +91,13 @@ def generate_match_analysis(match_context: dict) -> str | None:
     settings = get_settings()
     api_key = settings.gemini_api_key
     if not api_key:
-        log.debug("Gemini API key not configured — skipping analysis.")
+        log.warning("Gemini API key not configured — skipping analysis.")
         return None
 
     model = settings.gemini_model
     url = _API_URL.format(model=model)
+    log.info("Gemini: calling %s for %s vs %s", model,
+             match_context.get("team_a"), match_context.get("team_b"))
 
     prompt = _build_prompt(match_context)
 
@@ -128,6 +133,8 @@ def generate_match_analysis(match_context: dict) -> str | None:
             log.warning("Gemini returned empty text.")
             return None
 
+        log.info("Gemini: got %d chars analysis for %s vs %s",
+                 len(text), match_context.get("team_a"), match_context.get("team_b"))
         return text
 
     except httpx.HTTPStatusError as exc:
