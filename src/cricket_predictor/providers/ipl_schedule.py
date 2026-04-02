@@ -74,7 +74,7 @@ _RAW_FIXTURES: list[tuple[str, str, str, str]] = [
     ("GT",  "RR",  "GT",  "2026-03-30"),
     ("LSG", "RCB", "LSG", "2026-03-31"),
     ("CSK", "KKR", "CSK", "2026-04-01"),
-    ("SRH", "GT",  "SRH", "2026-04-02"),
+    ("SRH", "KKR", "KKR", "2026-04-02"),   # Eden Gardens (neutral/KKR home)
     ("MI",  "DC",  "MI",  "2026-04-03"),
     ("RR",  "PBKS","RR",  "2026-04-04"),
     # Week 3 (April 5–11)
