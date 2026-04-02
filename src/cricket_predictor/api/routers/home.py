@@ -33,8 +33,12 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict) -
         winner = next_pred.get("predicted_winner", "TBA")
         ta_pct = round(next_pred.get("team_a_probability", 0.5) * 100, 1)
         tb_pct = round(100 - ta_pct, 1)
-        conf = round(next_pred.get("confidence_score", 0) * 100, 0)
         explanation = next_pred.get("explanation", "")
+        # Strip toss-related lines — toss is unknown before match starts
+        explanation = "; ".join(
+            part for part in explanation.split("; ")
+            if "toss" not in part.lower()
+        )
         winner_pct = ta_pct if winner == team_a else tb_pct
 
         next_html = f"""
@@ -64,9 +68,10 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict) -
               </div>
             </div>
             <div class="bg-indigo-50 rounded-xl p-4 text-center mt-4">
-              <p class="text-xs text-indigo-500 mb-1 uppercase tracking-wide font-semibold">Predicted Winner</p>
+              <p class="text-xs text-indigo-500 mb-1 uppercase tracking-wide font-semibold">Pre-match Prediction</p>
               <p class="text-3xl font-extrabold text-indigo-700">{winner}</p>
-              <p class="text-indigo-500 text-sm mt-1">{winner_pct}% probability · {conf:.0f}% confidence</p>
+              <p class="text-indigo-500 text-sm mt-1">{winner_pct}% win probability</p>
+              <p class="text-indigo-300 text-xs mt-1">Toss &amp; pitch conditions not yet known · prediction updates automatically</p>
             </div>
             {f'<p class="text-gray-500 text-xs mt-3 text-center italic">{explanation}</p>' if explanation else ""}
           </div>
@@ -180,32 +185,9 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict) -
       </div>
     </div>
 
-    <!-- Two-column layout -->
-    <div class="grid md:grid-cols-2 gap-6 items-start">
-
-      <!-- Next match prediction -->
+    <!-- Next match prediction (full width) -->
+    <div class="max-w-2xl mx-auto">
       {next_html}
-
-      <!-- Quick links -->
-      <div class="bg-white rounded-2xl shadow border border-gray-100 p-5 space-y-3">
-        <h2 class="font-semibold text-gray-700 mb-3">🔗 API Endpoints</h2>
-        {''.join(f'''
-        <a href="{url}" target="_blank"
-           class="flex items-center gap-3 p-3 rounded-xl hover:bg-indigo-50 transition group">
-          <span class="bg-indigo-100 text-indigo-600 rounded-lg p-2 text-sm group-hover:bg-indigo-200">{icon}</span>
-          <div>
-            <p class="text-sm font-medium text-gray-700">{label}</p>
-            <p class="text-xs text-gray-400">{url}</p>
-          </div>
-        </a>''' for icon, label, url in [
-            ("📊", "Match Prediction", "/predict/match"),
-            ("🧑", "Player Prediction", "/predict/player"),
-            ("🏆", "IPL Standings", "/standings"),
-            ("🔄", "Refresh Standings", "/standings/refresh"),
-            ("📋", "API Docs", "/docs"),
-            ("❤️", "Health Check", "/health"),
-        ])}
-      </div>
     </div>
 
     <!-- Prediction history -->

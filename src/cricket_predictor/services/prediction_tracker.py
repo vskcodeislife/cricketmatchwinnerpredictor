@@ -74,7 +74,7 @@ class PredictionTrackerService:
                 venue=match["venue"],
                 match_format="T20",
                 pitch_type="balanced",
-                toss_winner=team_a,   # Unknown pre-match — use neutral default
+                toss_winner="Unknown",  # Toss not known pre-match
                 toss_decision="bat",
                 team_a_recent_form=team_a_form,
                 team_b_recent_form=team_b_form,
