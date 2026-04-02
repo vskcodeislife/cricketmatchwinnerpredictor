@@ -83,13 +83,12 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
           <p class="font-medium">No upcoming match found — check back soon</p>
         </div>"""
 
-    # ── Upcoming match cards ───────────────────────────────
-    upcoming_cards = ""
-    # Skip today's match (already shown in Next Match section)
+    # ── Upcoming match table ─────────────────────────────────
     from datetime import date
     today = date.today().isoformat()
     future_matches = [m for m in upcoming if m.get("match_date", "") > today][:7]
 
+    upcoming_rows = ""
     for m in future_matches:
         u_ta = m.get("team_a", "")
         u_tb = m.get("team_b", "")
@@ -98,31 +97,24 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
         u_winner = m.get("predicted_winner") or "—"
         u_ta_pct = round((m.get("team_a_probability") or 0.5) * 100, 1)
         u_tb_pct = round(100 - u_ta_pct, 1)
-        winner_cls = "text-indigo-700" if u_winner == u_ta else "text-purple-700"
-        upcoming_cards += f"""
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-xs font-semibold text-gray-400 uppercase tracking-wide">📅 {u_date}</span>
-            <span class="text-xs text-gray-400 truncate max-w-[140px]">📍 {u_venue}</span>
-          </div>
-          <div class="flex items-center justify-between gap-2 mb-3">
-            <span class="font-semibold text-gray-800 text-sm leading-tight flex-1">{u_ta}</span>
-            <span class="text-gray-400 text-xs font-medium shrink-0">vs</span>
-            <span class="font-semibold text-gray-800 text-sm leading-tight flex-1 text-right">{u_tb}</span>
-          </div>
-          <div class="mb-2">
-            <div class="flex justify-between text-xs text-gray-400 mb-1">
-              <span>{u_ta_pct}%</span><span>{u_tb_pct}%</span>
-            </div>
-            <div class="flex h-2 rounded-full overflow-hidden">
-              <div class="bg-indigo-400" style="width:{u_ta_pct}%"></div>
+        winner_cls = "text-indigo-700 font-semibold" if u_winner == u_ta else "text-purple-700 font-semibold"
+        bar_a = int(u_ta_pct)
+        upcoming_rows += f"""
+        <tr class="border-b border-gray-100 hover:bg-gray-50 transition">
+          <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{u_date}</td>
+          <td class="px-4 py-3 text-sm font-medium text-gray-800 whitespace-nowrap">{u_ta} <span class="text-gray-400 font-normal">vs</span> {u_tb}</td>
+          <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap hidden md:table-cell">{u_venue}</td>
+          <td class="px-4 py-3">
+            <div class="flex h-2 rounded-full overflow-hidden w-24">
+              <div class="bg-indigo-400" style="width:{bar_a}%"></div>
               <div class="bg-purple-300 flex-1"></div>
             </div>
-          </div>
-          <p class="text-xs text-center mt-2">
-            Predicted: <span class="font-semibold {winner_cls}">{u_winner}</span>
-          </p>
-        </div>"""
+            <div class="flex justify-between text-[10px] text-gray-400 mt-0.5 w-24">
+              <span>{u_ta_pct}%</span><span>{u_tb_pct}%</span>
+            </div>
+          </td>
+          <td class="px-4 py-3 text-sm {winner_cls} whitespace-nowrap">{u_winner}</td>
+        </tr>"""
 
     upcoming_section = f"""
     <div class="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
@@ -130,8 +122,21 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
         <h2 class="font-semibold text-gray-700">📅 Upcoming Matches &amp; Predictions</h2>
         <p class="text-xs text-gray-400 mt-0.5">Next 7 fixtures · pre-match win probability · 7:30 PM IST</p>
       </div>
-      <div class="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-        {upcoming_cards if upcoming_cards else '<p class="text-gray-400 text-sm col-span-4 py-4 text-center">No upcoming fixtures found</p>'}
+      <div class="overflow-x-auto">
+        <table class="w-full text-left">
+          <thead>
+            <tr class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wider">
+              <th class="px-4 py-3 font-medium">Date</th>
+              <th class="px-4 py-3 font-medium">Match</th>
+              <th class="px-4 py-3 font-medium hidden md:table-cell">Venue</th>
+              <th class="px-4 py-3 font-medium">Probability</th>
+              <th class="px-4 py-3 font-medium">Predicted Winner</th>
+            </tr>
+          </thead>
+          <tbody>
+            {upcoming_rows if upcoming_rows else '<tr><td colspan="5" class="px-4 py-6 text-center text-gray-400">No upcoming fixtures found</td></tr>'}
+          </tbody>
+        </table>
       </div>
     </div>""" if future_matches else ""
 
