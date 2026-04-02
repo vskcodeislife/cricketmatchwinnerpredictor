@@ -160,11 +160,11 @@ class PredictionsDB:
             return dict(row) if row else None
 
     def get_recent_predictions(self, limit: int = 10) -> list[dict]:
-        """Return predictions for matches on or before today, most recent first."""
+        """Return predictions for matches before today (completed dates), most recent first."""
         with self._connect() as conn:
             rows = conn.execute(
                 """SELECT * FROM match_predictions
-                   WHERE match_date <= date('now')
+                   WHERE match_date < date('now')
                    ORDER BY match_date DESC, created_at DESC LIMIT ?""",
                 (limit,),
             ).fetchall()
