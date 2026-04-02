@@ -20,7 +20,7 @@ from cricket_predictor.config.settings import Settings, get_settings
 from cricket_predictor.data.predictions_db import PredictionsDB
 from cricket_predictor.providers.cricinfo_standings import venue_advantage
 from cricket_predictor.providers.ipl_schedule import IPLScheduleProvider
-from cricket_predictor.services.override_parser import apply_overrides
+from cricket_predictor.services.override_parser import apply_overrides, parse_override
 from cricket_predictor.services.standings_service import get_standings_service
 
 # Only trust NRR-derived strengths once a team has played this many games;
@@ -234,6 +234,48 @@ class PredictionTrackerService:
     def delete_override(self, override_id: int) -> None:
         self._db.delete_override(override_id)
         self._invalidate_future_predictions()
+
+    def refresh_injury_overrides(self) -> int:
+        """Fetch injury report from crictracker and sync overrides.
+
+        Clears any existing injury-sourced overrides, fetches the latest
+        report, parses each entry, and saves as new overrides.  Returns the
+        number of injury entries found.
+        """
+        from cricket_predictor.providers.injury_report_provider import InjuryReportProvider
+
+        provider = InjuryReportProvider()
+        try:
+            report = provider.fetch()
+            provider.save(report)
+        except Exception as exc:
+            log.warning("Injury report fetch failed: %s", exc)
+            report = provider.load()
+            if not report:
+                return 0
+
+        # Clear old auto-generated injury overrides
+        existing = self._db.get_active_overrides()
+        for ov in existing:
+            if ov.get("note", "").startswith("[auto-injury]"):
+                self._db.delete_override(ov["id"])
+
+        # Parse the injury report into override text and apply
+        override_text = provider.build_override_text(report)
+        if not override_text:
+            return 0
+
+        parsed = parse_override(override_text)
+        for adj in parsed:
+            self._db.save_override(note="[auto-injury] " + adj.get("description", ""), parsed=adj)
+
+        # Re-generate predictions with new overrides
+        if parsed:
+            self._invalidate_future_predictions()
+            log.info("Injury overrides refreshed: %d adjustments from %d players",
+                     len(parsed), report.get("total_unavailable", 0))
+
+        return len(parsed)
 
     def _invalidate_future_predictions(self) -> None:
         """Delete all future predictions so they are re-generated with latest overrides."""

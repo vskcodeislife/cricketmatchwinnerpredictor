@@ -57,6 +57,22 @@ async def _prediction_tracker_loop(interval_seconds: int) -> None:
         await asyncio.sleep(interval_seconds)
 
 
+async def _injury_refresh_loop(interval_seconds: int) -> None:
+    """Daily loop: fetch injury/unavailability report and update overrides."""
+    from cricket_predictor.services.prediction_tracker import get_prediction_tracker
+
+    tracker = get_prediction_tracker()
+    while True:
+        try:
+            count = await asyncio.to_thread(tracker.refresh_injury_overrides)
+            if count:
+                tracker.predict_upcoming_matches()
+                log.info("Injury refresh: %d overrides applied, predictions updated.", count)
+        except Exception as exc:
+            log.warning("Injury refresh cycle failed: %s", exc)
+        await asyncio.sleep(interval_seconds)
+
+
 async def _standings_refresh_loop(interval_seconds: int) -> None:
     """Periodic loop: refresh IPL standings from ESPN Cricinfo."""
     from cricket_predictor.services.standings_service import get_standings_service
@@ -92,12 +108,25 @@ async def lifespan(_: FastAPI):
     try:
         from cricket_predictor.services.prediction_tracker import get_prediction_tracker
         tracker = get_prediction_tracker()
+
+        # Fetch injury report from crictracker on startup
+        try:
+            count = tracker.refresh_injury_overrides()
+            log.info("Initial injury report: %d overrides applied.", count)
+        except Exception as exc:
+            log.warning("Initial injury report fetch failed: %s", exc)
+
         tracker.predict_upcoming_matches()
         log.info("Initial upcoming match predictions saved.")
     except Exception as exc:
         log.warning("Initial prediction tracker run failed: %s", exc)
     tasks.append(
         asyncio.create_task(_prediction_tracker_loop(settings.tracker_interval_seconds))
+    )
+
+    # Daily injury report refresh (every 12 hours)
+    tasks.append(
+        asyncio.create_task(_injury_refresh_loop(12 * 3600))
     )
 
     if settings.enable_live_updates:

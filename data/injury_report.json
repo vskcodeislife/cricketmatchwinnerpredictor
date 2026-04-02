@@ -1,0 +1,283 @@
+{
+  "fetched_at": "2026-04-02T08:01:18+00:00",
+  "source_url": "https://www.crictracker.com/cricket-appeal/ipl-2026-full-list-of-injured-and-unavailable-players/",
+  "total_unavailable": 16,
+  "players": [
+    {
+      "sr_no": 1,
+      "player": "Harshit Rana",
+      "franchise": "Kolkata Knight Riders",
+      "role": "Bowler",
+      "reason": "Knee Surgery (Out of Season)",
+      "status": "out_for_season"
+    },
+    {
+      "sr_no": 2,
+      "player": "Mitchell Starc",
+      "franchise": "Delhi Capitals",
+      "role": "Bowler",
+      "reason": "Workload Management (To miss early games)",
+      "status": "miss_early_games"
+    },
+    {
+      "sr_no": 3,
+      "player": "Sam Curran",
+      "franchise": "Rajasthan Royals",
+      "role": "All-Rounder",
+      "reason": "Suspected Groin Injury (Out of season)",
+      "status": "out_for_season"
+    },
+    {
+      "sr_no": 4,
+      "player": "Pat Cummins",
+      "franchise": "Sunrisers Hyderabad",
+      "role": "All-Rounder",
+      "reason": "Back Injury (To miss early games)",
+      "status": "miss_early_games"
+    },
+    {
+      "sr_no": 5,
+      "player": "Josh Hazlewood",
+      "franchise": "Royal Challengers Bengaluru",
+      "role": "Bowler",
+      "reason": "Hamstring/Achilles (To miss early games)",
+      "status": "miss_early_games"
+    },
+    {
+      "sr_no": 6,
+      "player": "Nathan Ellis",
+      "franchise": "Chennai Super Kings",
+      "role": "Bowler",
+      "reason": "Hamstring Injury (Out of season)",
+      "status": "out_for_season"
+    },
+    {
+      "sr_no": 7,
+      "player": "Matheesha Pathirana",
+      "franchise": "Kolkata Knight Riders",
+      "role": "Bowler",
+      "reason": "Calf Strain (To miss early games)",
+      "status": "miss_early_games"
+    },
+    {
+      "sr_no": 8,
+      "player": "Wanindu Hasaranga",
+      "franchise": "Lucknow Super Giants",
+      "role": "All-Rounder",
+      "reason": "Hamstring Injury (Remains doubtful for season)",
+      "status": "doubtful"
+    },
+    {
+      "sr_no": 9,
+      "player": "Lockie Ferguson",
+      "franchise": "Punjab Kings",
+      "role": "Bowler",
+      "reason": "Parental Leave (To miss early games)",
+      "status": "miss_early_games"
+    },
+    {
+      "sr_no": 10,
+      "player": "Jack Edwards",
+      "franchise": "Sunrisers Hyderabad",
+      "role": "All-Rounder",
+      "reason": "Unspecified Injury (Out of season)",
+      "status": "out_for_season"
+    },
+    {
+      "sr_no": 11,
+      "player": "Eshan Malinga",
+      "franchise": "Sunrisers Hyderabad",
+      "role": "Bowler",
+      "reason": "Shoulder Injury (Doubtful for season)",
+      "status": "doubtful"
+    },
+    {
+      "sr_no": 12,
+      "player": "Matthew Short",
+      "franchise": "Chennai Super Kings",
+      "role": "All-Rounder",
+      "reason": "Fractured Thumb (To miss early games)",
+      "status": "miss_early_games"
+    },
+    {
+      "sr_no": 13,
+      "player": "Atharva Ankolekar",
+      "franchise": "Mumbai Indians",
+      "role": "All-Rounder",
+      "reason": "Knee Injury (Out of season)",
+      "status": "out_for_season"
+    },
+    {
+      "sr_no": 14,
+      "player": "Akash Deep",
+      "franchise": "Kolkata Knight Riders",
+      "role": "Bowler",
+      "reason": "Unspecified Injury (Out of season)",
+      "status": "out_for_season"
+    },
+    {
+      "sr_no": 15,
+      "player": "Ben Duckett",
+      "franchise": "Delhi Capitals",
+      "role": "Opening batter",
+      "reason": "Opted out to focus on international form",
+      "status": "opted_out"
+    },
+    {
+      "sr_no": 16,
+      "player": "MS Dhoni",
+      "franchise": "Chennai Super Kings",
+      "role": "Wicketkeeper-batter",
+      "reason": "Calf Strain: Ruled out for first two weeks",
+      "status": "out_for_season"
+    }
+  ],
+  "by_team": {
+    "Kolkata Knight Riders": [
+      {
+        "sr_no": 1,
+        "player": "Harshit Rana",
+        "franchise": "Kolkata Knight Riders",
+        "role": "Bowler",
+        "reason": "Knee Surgery (Out of Season)",
+        "status": "out_for_season"
+      },
+      {
+        "sr_no": 7,
+        "player": "Matheesha Pathirana",
+        "franchise": "Kolkata Knight Riders",
+        "role": "Bowler",
+        "reason": "Calf Strain (To miss early games)",
+        "status": "miss_early_games"
+      },
+      {
+        "sr_no": 14,
+        "player": "Akash Deep",
+        "franchise": "Kolkata Knight Riders",
+        "role": "Bowler",
+        "reason": "Unspecified Injury (Out of season)",
+        "status": "out_for_season"
+      }
+    ],
+    "Delhi Capitals": [
+      {
+        "sr_no": 2,
+        "player": "Mitchell Starc",
+        "franchise": "Delhi Capitals",
+        "role": "Bowler",
+        "reason": "Workload Management (To miss early games)",
+        "status": "miss_early_games"
+      },
+      {
+        "sr_no": 15,
+        "player": "Ben Duckett",
+        "franchise": "Delhi Capitals",
+        "role": "Opening batter",
+        "reason": "Opted out to focus on international form",
+        "status": "opted_out"
+      }
+    ],
+    "Rajasthan Royals": [
+      {
+        "sr_no": 3,
+        "player": "Sam Curran",
+        "franchise": "Rajasthan Royals",
+        "role": "All-Rounder",
+        "reason": "Suspected Groin Injury (Out of season)",
+        "status": "out_for_season"
+      }
+    ],
+    "Sunrisers Hyderabad": [
+      {
+        "sr_no": 4,
+        "player": "Pat Cummins",
+        "franchise": "Sunrisers Hyderabad",
+        "role": "All-Rounder",
+        "reason": "Back Injury (To miss early games)",
+        "status": "miss_early_games"
+      },
+      {
+        "sr_no": 10,
+        "player": "Jack Edwards",
+        "franchise": "Sunrisers Hyderabad",
+        "role": "All-Rounder",
+        "reason": "Unspecified Injury (Out of season)",
+        "status": "out_for_season"
+      },
+      {
+        "sr_no": 11,
+        "player": "Eshan Malinga",
+        "franchise": "Sunrisers Hyderabad",
+        "role": "Bowler",
+        "reason": "Shoulder Injury (Doubtful for season)",
+        "status": "doubtful"
+      }
+    ],
+    "Royal Challengers Bengaluru": [
+      {
+        "sr_no": 5,
+        "player": "Josh Hazlewood",
+        "franchise": "Royal Challengers Bengaluru",
+        "role": "Bowler",
+        "reason": "Hamstring/Achilles (To miss early games)",
+        "status": "miss_early_games"
+      }
+    ],
+    "Chennai Super Kings": [
+      {
+        "sr_no": 6,
+        "player": "Nathan Ellis",
+        "franchise": "Chennai Super Kings",
+        "role": "Bowler",
+        "reason": "Hamstring Injury (Out of season)",
+        "status": "out_for_season"
+      },
+      {
+        "sr_no": 12,
+        "player": "Matthew Short",
+        "franchise": "Chennai Super Kings",
+        "role": "All-Rounder",
+        "reason": "Fractured Thumb (To miss early games)",
+        "status": "miss_early_games"
+      },
+      {
+        "sr_no": 16,
+        "player": "MS Dhoni",
+        "franchise": "Chennai Super Kings",
+        "role": "Wicketkeeper-batter",
+        "reason": "Calf Strain: Ruled out for first two weeks",
+        "status": "out_for_season"
+      }
+    ],
+    "Lucknow Super Giants": [
+      {
+        "sr_no": 8,
+        "player": "Wanindu Hasaranga",
+        "franchise": "Lucknow Super Giants",
+        "role": "All-Rounder",
+        "reason": "Hamstring Injury (Remains doubtful for season)",
+        "status": "doubtful"
+      }
+    ],
+    "Punjab Kings": [
+      {
+        "sr_no": 9,
+        "player": "Lockie Ferguson",
+        "franchise": "Punjab Kings",
+        "role": "Bowler",
+        "reason": "Parental Leave (To miss early games)",
+        "status": "miss_early_games"
+      }
+    ],
+    "Mumbai Indians": [
+      {
+        "sr_no": 13,
+        "player": "Atharva Ankolekar",
+        "franchise": "Mumbai Indians",
+        "role": "All-Rounder",
+        "reason": "Knee Injury (Out of season)",
+        "status": "out_for_season"
+      }
+    ]
+  }
+}
