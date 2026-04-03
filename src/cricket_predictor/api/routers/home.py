@@ -416,8 +416,10 @@ async def admin_regenerate() -> RedirectResponse:
     from cricket_predictor.services.prediction_tracker import get_prediction_tracker
     from cricket_predictor.services.standings_service import get_standings_service
 
-    # Clear settings cache so fresh env vars (e.g. new Gemini key) are picked up
+    # Clear cached settings/services so fresh env vars and the latest schedule
+    # are picked up before regeneration.
     get_settings.cache_clear()
+    get_prediction_tracker.cache_clear()
 
     tracker = get_prediction_tracker()
     # Refresh standings
@@ -430,9 +432,10 @@ async def admin_regenerate() -> RedirectResponse:
         tracker.refresh_injury_overrides()
     except Exception:
         pass
-    # Force-clear ALL future predictions so they are re-generated with Gemini
+    # Force-clear all future predictions so they are re-generated.
     tracker._invalidate_future_predictions()
-    # Regenerate all predictions with current data + AI analysis
+    # Regenerate all predictions quickly; AI analysis is generated lazily
+    # for the current next match when the homepage is viewed.
     tracker.predict_upcoming_matches()
     return RedirectResponse(url="/", status_code=303)
 

@@ -173,6 +173,13 @@ class PredictionsDB:
             ).fetchone()
             return dict(row) if row else None
 
+    def update_prediction_analysis(self, match_id: str, ai_analysis: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE match_predictions SET ai_analysis = ? WHERE match_id = ?",
+                (ai_analysis, match_id),
+            )
+
     def get_recent_predictions(self, limit: int = 10) -> list[dict]:
         """Return predictions for matches before today (completed dates), most recent first."""
         with self._connect() as conn:

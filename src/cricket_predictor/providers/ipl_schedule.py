@@ -48,111 +48,117 @@ HOME_VENUE = {
     "Kolkata Knight Riders": "Eden Gardens",
     "Sunrisers Hyderabad": "Rajiv Gandhi International Stadium",
     "Delhi Capitals": "Arun Jaitley Stadium",
-    "Punjab Kings": "Punjab Cricket Association IS Bindra Stadium",    "Rajasthan Royals": "Sawai Mansingh Stadium",
+    "Punjab Kings": "Punjab Cricket Association IS Bindra Stadium",
+    "Rajasthan Royals": "Sawai Mansingh Stadium",
     "Lucknow Super Giants": "BRSABV Ekana Cricket Stadium",
     "Gujarat Titans": "Narendra Modi Stadium",
 }
 
+# Neutral / secondary venue lookup (city → venue name)
+_CITY_VENUE = {
+    "Hyderabad":       "Rajiv Gandhi International Stadium",
+    "Chennai":         "MA Chidambaram Stadium",
+    "Delhi":           "Arun Jaitley Stadium",
+    "Chandigarh":      "Punjab Cricket Association IS Bindra Stadium",
+    "New Chandigarh":  "Punjab Cricket Association IS Bindra Stadium",
+    "Lucknow":         "BRSABV Ekana Cricket Stadium",
+    "Kolkata":         "Eden Gardens",
+    "Bengaluru":       "M Chinnaswamy Stadium",
+    "Guwahati":        "ACA Stadium, Barsapara",
+    "Mumbai":          "Wankhede Stadium",
+    "Ahmedabad":       "Narendra Modi Stadium",
+    "Jaipur":          "Sawai Mansingh Stadium",
+    "Dharamshala":     "HPCA Stadium, Dharamshala",
+}
+
 # ---------------------------------------------------------------------------
-# IPL 2026 fixture list  (source: BCCI official schedule, verified via
-# https://www.olympics.com/en/news/indian-premier-league-ipl-2026-schedule-match-list)
-# Format: (team_a_short, team_b_short, home_team_short_for_venue, date_YYYY-MM-DD)
+# IPL 2026 league fixture list from the user-provided schedule.
+# Format: (home_team_short, away_team_short, venue_city, date_YYYY-MM-DD)
 # ---------------------------------------------------------------------------
 _RAW_FIXTURES: list[tuple[str, str, str, str]] = [
-    # ── Week 1 ──────────────────────────────────────────────────────────────
-    ("RCB", "SRH", "RCB", "2026-03-28"),   # M1  Bengaluru  (opener)
-    ("MI",  "KKR", "MI",  "2026-03-29"),   # M2  Mumbai
-    ("RR",  "CSK", "RR",  "2026-03-30"),   # M3  Jaipur
-    ("DC",  "LSG", "DC",  "2026-03-31"),   # M4  Delhi
-    ("PBKS","GT",  "PBKS","2026-04-01"),   # M5  Mullanpur
-    ("SRH", "KKR", "KKR", "2026-04-02"),   # M6  Eden Gardens  ← confirmed
-    ("MI",  "RR",  "MI",  "2026-04-03"),   # M7  Mumbai
-    # ── Week 2 ──────────────────────────────────────────────────────────────
-    ("CSK", "RCB", "CSK", "2026-04-04"),   # M8  Chennai
-    ("GT",  "DC",  "GT",  "2026-04-05"),   # M9  Ahmedabad
-    ("LSG", "PBKS","LSG", "2026-04-06"),   # M10 Lucknow
-    ("KKR", "MI",  "KKR", "2026-04-07"),   # M11 Kolkata
-    ("SRH", "RR",  "SRH", "2026-04-08"),   # M12 Hyderabad
-    ("RCB", "DC",  "RCB", "2026-04-09"),   # M13 Bengaluru
-    ("CSK", "GT",  "CSK", "2026-04-10"),   # M14 Chennai
-    # ── Week 3 ──────────────────────────────────────────────────────────────
-    ("PBKS","KKR", "PBKS","2026-04-11"),   # M15 Mullanpur
-    ("LSG", "MI",  "LSG", "2026-04-12"),   # M16 Lucknow
-    ("RR",  "RCB", "RR",  "2026-04-13"),   # M17 Jaipur
-    ("DC",  "SRH", "DC",  "2026-04-14"),   # M18 Delhi
-    ("GT",  "KKR", "GT",  "2026-04-15"),   # M19 Ahmedabad
-    ("CSK", "PBKS","CSK", "2026-04-16"),   # M20 Chennai
-    ("MI",  "LSG", "MI",  "2026-04-17"),   # M21 Mumbai
-    # ── Week 4 ──────────────────────────────────────────────────────────────
-    ("RCB", "RR",  "RCB", "2026-04-18"),   # M22 Bengaluru
-    ("SRH", "DC",  "SRH", "2026-04-19"),   # M23 Hyderabad
-    ("KKR", "GT",  "KKR", "2026-04-20"),   # M24 Kolkata
-    ("PBKS","MI",  "PBKS","2026-04-21"),   # M25 Mullanpur
-    ("LSG", "CSK", "LSG", "2026-04-22"),   # M26 Lucknow
-    ("RR",  "DC",  "RR",  "2026-04-23"),   # M27 Jaipur
-    ("RCB", "GT",  "RCB", "2026-04-24"),   # M28 Bengaluru
-    # ── Week 5 ──────────────────────────────────────────────────────────────
-    ("KKR", "SRH", "KKR", "2026-04-25"),   # M29 Kolkata
-    ("MI",  "CSK", "MI",  "2026-04-26"),   # M30 Mumbai
-    ("PBKS","RR",  "PBKS","2026-04-27"),   # M31 Mullanpur
-    ("DC",  "GT",  "DC",  "2026-04-28"),   # M32 Delhi
-    ("LSG", "RCB", "LSG", "2026-04-29"),   # M33 Lucknow
-    ("SRH", "CSK", "SRH", "2026-04-30"),   # M34 Hyderabad
-    ("KKR", "RR",  "KKR", "2026-05-01"),   # M35 Kolkata
-    # ── Week 6 ──────────────────────────────────────────────────────────────
-    ("RCB", "PBKS","RCB", "2026-05-02"),   # M36 Bengaluru
-    ("GT",  "LSG", "GT",  "2026-05-03"),   # M37 Ahmedabad
-    ("MI",  "DC",  "MI",  "2026-05-04"),   # M38 Mumbai
-    ("CSK", "KKR", "CSK", "2026-05-05"),   # M39 Chennai
-    ("RR",  "SRH", "RR",  "2026-05-06"),   # M40 Jaipur
-    ("PBKS","LSG", "PBKS","2026-05-07"),   # M41 Mullanpur
-    ("GT",  "RCB", "GT",  "2026-05-08"),   # M42 Ahmedabad
-    # ── Week 7 ──────────────────────────────────────────────────────────────
-    ("DC",  "MI",  "DC",  "2026-05-09"),   # M43 Delhi
-    ("KKR", "CSK", "KKR", "2026-05-10"),   # M44 Kolkata
-    ("SRH", "PBKS","SRH", "2026-05-11"),   # M45 Hyderabad
-    ("RR",  "GT",  "RR",  "2026-05-12"),   # M46 Jaipur
-    ("LSG", "DC",  "LSG", "2026-05-13"),   # M47 Lucknow
-    ("RCB", "MI",  "RCB", "2026-05-14"),   # M48 Bengaluru
-    ("CSK", "SRH", "CSK", "2026-05-15"),   # M49 Chennai
-    # ── Week 8 ──────────────────────────────────────────────────────────────
-    ("GT",  "PBKS","GT",  "2026-05-16"),   # M50 Ahmedabad
-    ("KKR", "LSG", "KKR", "2026-05-17"),   # M51 Kolkata
-    ("MI",  "RR",  "MI",  "2026-05-17"),   # M52 Mumbai  (double-header)
-    ("DC",  "RCB", "DC",  "2026-05-18"),   # M53 Delhi
-    ("SRH", "GT",  "SRH", "2026-05-18"),   # M54 Hyderabad (double-header)
-    ("PBKS","CSK", "PBKS","2026-05-19"),   # M55 Mullanpur
-    ("RR",  "KKR", "RR",  "2026-05-19"),   # M56 Jaipur  (double-header)
-    # ── Week 9 — final league round ─────────────────────────────────────────
-    ("LSG", "SRH", "LSG", "2026-05-20"),   # M57 Lucknow
-    ("MI",  "GT",  "MI",  "2026-05-20"),   # M58 Mumbai  (double-header)
-    ("DC",  "KKR", "DC",  "2026-05-21"),   # M59 Delhi
-    ("RCB", "CSK", "RCB", "2026-05-21"),   # M60 Bengaluru (double-header)
-    ("PBKS","RR",  "PBKS","2026-05-22"),   # M61 Mullanpur
-    ("GT",  "SRH", "GT",  "2026-05-22"),   # M62 Ahmedabad (double-header)
-    ("LSG", "MI",  "LSG", "2026-05-23"),   # M63 Lucknow
-    ("KKR", "DC",  "KKR", "2026-05-23"),   # M64 Kolkata  (double-header)
-    ("CSK", "RR",  "CSK", "2026-05-24"),   # M65 Chennai
-    ("RCB", "PBKS","RCB", "2026-05-24"),   # M66 Bengaluru (double-header) — league ends
-    # ── Playoffs (venues TBC by BCCI) ────────────────────────────────────────
-    ("TBD1","TBD2","Narendra Modi Stadium","2026-05-27"),  # Qualifier 1
-    ("TBD3","TBD4","Eden Gardens",         "2026-05-28"),  # Eliminator
-    ("TBD5","TBD6","Wankhede Stadium",     "2026-05-30"),  # Qualifier 2
-    ("TBD7","TBD8","Narendra Modi Stadium","2026-06-01"),  # Final
+    ("RCB", "SRH", "Bengaluru", "2026-03-28"),
+    ("MI", "KKR", "Mumbai", "2026-03-29"),
+    ("RR", "CSK", "Guwahati", "2026-03-30"),
+    ("PBKS", "GT", "Chandigarh", "2026-03-31"),
+    ("LSG", "DC", "Lucknow", "2026-04-01"),
+    ("KKR", "SRH", "Kolkata", "2026-04-02"),
+    ("CSK", "PBKS", "Chennai", "2026-04-03"),
+    ("DC", "MI", "Delhi", "2026-04-04"),
+    ("GT", "RR", "Ahmedabad", "2026-04-04"),
+    ("SRH", "LSG", "Hyderabad", "2026-04-05"),
+    ("RCB", "CSK", "Bengaluru", "2026-04-05"),
+    ("KKR", "PBKS", "Kolkata", "2026-04-06"),
+    ("RR", "MI", "Guwahati", "2026-04-07"),
+    ("DC", "GT", "Delhi", "2026-04-08"),
+    ("KKR", "LSG", "Kolkata", "2026-04-09"),
+    ("RR", "RCB", "Guwahati", "2026-04-10"),
+    ("PBKS", "SRH", "Chandigarh", "2026-04-11"),
+    ("CSK", "DC", "Chennai", "2026-04-11"),
+    ("LSG", "GT", "Lucknow", "2026-04-12"),
+    ("MI", "RCB", "Mumbai", "2026-04-12"),
+    ("SRH", "CSK", "Hyderabad", "2026-04-13"),
+    ("DC", "KKR", "Delhi", "2026-04-14"),
+    ("RCB", "LSG", "Bengaluru", "2026-04-15"),
+    ("GT", "MI", "Ahmedabad", "2026-04-16"),
+    ("PBKS", "RR", "Chandigarh", "2026-04-17"),
+    ("RCB", "DC", "Bengaluru", "2026-04-18"),
+    ("CSK", "LSG", "Chennai", "2026-04-18"),
+    ("MI", "SRH", "Mumbai", "2026-04-19"),
+    ("GT", "KKR", "Ahmedabad", "2026-04-19"),
+    ("RR", "DC", "Jaipur", "2026-04-20"),
+    ("LSG", "PBKS", "Lucknow", "2026-04-21"),
+    ("SRH", "GT", "Hyderabad", "2026-04-22"),
+    ("CSK", "MI", "Chennai", "2026-04-23"),
+    ("RCB", "GT", "Bengaluru", "2026-04-24"),
+    ("KKR", "RR", "Kolkata", "2026-04-25"),
+    ("PBKS", "DC", "Chandigarh", "2026-04-25"),
+    ("MI", "LSG", "Mumbai", "2026-04-26"),
+    ("SRH", "RCB", "Hyderabad", "2026-04-26"),
+    ("GT", "CSK", "Ahmedabad", "2026-04-27"),
+    ("RR", "KKR", "Jaipur", "2026-04-28"),
+    ("MI", "SRH", "Mumbai", "2026-04-29"),
+    ("GT", "RCB", "Ahmedabad", "2026-04-30"),
+    ("DC", "CSK", "Delhi", "2026-05-01"),
+    ("PBKS", "MI", "Chandigarh", "2026-05-02"),
+    ("LSG", "RR", "Lucknow", "2026-05-03"),
+    ("KKR", "RCB", "Kolkata", "2026-05-03"),
+    ("SRH", "DC", "Hyderabad", "2026-05-04"),
+    ("CSK", "GT", "Chennai", "2026-05-05"),
+    ("MI", "RR", "Mumbai", "2026-05-06"),
+    ("PBKS", "LSG", "Chandigarh", "2026-05-07"),
+    ("RCB", "SRH", "Bengaluru", "2026-05-08"),
+    ("DC", "KKR", "Delhi", "2026-05-09"),
+    ("RR", "GT", "Jaipur", "2026-05-10"),
+    ("LSG", "CSK", "Lucknow", "2026-05-10"),
+    ("MI", "PBKS", "Mumbai", "2026-05-11"),
+    ("SRH", "KKR", "Hyderabad", "2026-05-12"),
+    ("GT", "DC", "Ahmedabad", "2026-05-13"),
+    ("CSK", "RR", "Chennai", "2026-05-14"),
+    ("RCB", "PBKS", "Bengaluru", "2026-05-15"),
+    ("KKR", "MI", "Kolkata", "2026-05-16"),
+    ("LSG", "SRH", "Lucknow", "2026-05-16"),
+    ("DC", "RR", "Delhi", "2026-05-17"),
+    ("GT", "PBKS", "Ahmedabad", "2026-05-17"),
+    ("CSK", "KKR", "Chennai", "2026-05-18"),
+    ("RCB", "MI", "Bengaluru", "2026-05-19"),
+    ("SRH", "RR", "Hyderabad", "2026-05-20"),
+    ("PBKS", "CSK", "Chandigarh", "2026-05-21"),
+    ("MI", "GT", "Mumbai", "2026-05-22"),
+    ("KKR", "DC", "Kolkata", "2026-05-23"),
+    ("RR", "LSG", "Jaipur", "2026-05-24"),
 ]
 
 
 def _build_schedule() -> list[ScheduledMatch]:
     matches: list[ScheduledMatch] = []
-    for idx, (ta, tb, venue_key, match_date) in enumerate(_RAW_FIXTURES, start=1):
+    for idx, (ta, tb, venue_city, match_date) in enumerate(_RAW_FIXTURES, start=1):
         # Resolve team names and venue
         if ta.startswith("TBD"):
-            team_a, team_b, venue = ta, tb, venue_key
+            team_a, team_b, venue = ta, tb, venue_city
         else:
             team_a = SHORT_TEAM.get(ta, ta)
             team_b = SHORT_TEAM.get(tb, tb)
-            venue_owner = SHORT_TEAM.get(venue_key, venue_key)
-            venue = HOME_VENUE.get(venue_owner, HOME_VENUE.get(team_a, "Eden Gardens"))
+            venue = _CITY_VENUE.get(venue_city, HOME_VENUE.get(team_a, venue_city))
 
         match_id = f"IPL2026_M{idx:02d}"
         today = date.today().isoformat()

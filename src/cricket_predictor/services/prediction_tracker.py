@@ -114,14 +114,6 @@ class PredictionTrackerService:
             result = svc.predict_match(request)
             probs = result["winning_probability"]
 
-            # Generate AI analysis via Gemini LLM
-            ai_analysis = self._generate_ai_analysis(
-                match, team_a, team_b, team_a_form, team_b_form,
-                team_a_bat, team_b_bat, team_a_bowl, team_b_bowl,
-                venue_adv, result["predicted_winner"],
-                max(probs.values()), active_overrides,
-            )
-
             self._db.save_prediction(
                 match_id=match["match_id"],
                 team_a=team_a,
@@ -133,7 +125,7 @@ class PredictionTrackerService:
                 team_b_probability=probs.get(team_b, 0.5) / 100,
                 confidence_score=result["confidence_score"],
                 explanation=result.get("explanation", ""),
-                ai_analysis=ai_analysis or "",
+                ai_analysis="",
             )
             log.info(
                 "Saved prediction for %s: %s vs %s → %s (%.0f%%)",
@@ -204,8 +196,62 @@ class PredictionTrackerService:
             return None
         saved = self._db.get_prediction(nxt["match_id"])
         if saved:
+            if not (saved.get("ai_analysis") or "").strip():
+                analysis = self.ensure_prediction_analysis(nxt["match_id"])
+                if analysis:
+                    saved["ai_analysis"] = analysis
             return {**nxt, **saved}
         return dict(nxt)
+
+    def ensure_prediction_analysis(self, match_id: str) -> str | None:
+        """Generate and persist AI analysis for a saved prediction on demand."""
+        saved = self._db.get_prediction(match_id)
+        if not saved:
+            return None
+
+        existing = (saved.get("ai_analysis") or "").strip()
+        if existing:
+            return existing
+
+        match = self._schedule.get_match_by_id(match_id)
+        if match is None:
+            return None
+
+        standings = get_standings_service()
+        team_a = match["team_a"]
+        team_b = match["team_b"]
+        ta_standing = standings.get_team(team_a)
+        tb_standing = standings.get_team(team_b)
+        ta_games = ta_standing.played if ta_standing else 0
+        tb_games = tb_standing.played if tb_standing else 0
+        team_a_form = standings.recent_form(team_a)
+        team_b_form = standings.recent_form(team_b)
+        team_a_bat = standings.batting_strength(team_a) if ta_games >= _MIN_GAMES_FOR_NRR else 65.0
+        team_b_bat = standings.batting_strength(team_b) if tb_games >= _MIN_GAMES_FOR_NRR else 65.0
+        team_a_bowl = standings.bowling_strength(team_a) if ta_games >= _MIN_GAMES_FOR_NRR else 65.0
+        team_b_bowl = standings.bowling_strength(team_b) if tb_games >= _MIN_GAMES_FOR_NRR else 65.0
+
+        active_overrides = self._db.get_active_overrides()
+        parsed_overrides = [override["parsed"] for override in active_overrides]
+        team_a_bat, team_b_bat, team_a_bowl, team_b_bowl = apply_overrides(
+            team_a, team_b, team_a_bat, team_b_bat, team_a_bowl, team_b_bowl,
+            parsed_overrides,
+        )
+
+        venue_adv = venue_advantage(match["venue"], team_a, team_b)
+        winner = saved.get("predicted_winner", "")
+        win_pct = max(
+            float(saved.get("team_a_probability") or 0.5),
+            float(saved.get("team_b_probability") or 0.5),
+        ) * 100
+        analysis = self._generate_ai_analysis(
+            match, team_a, team_b, team_a_form, team_b_form,
+            team_a_bat, team_b_bat, team_a_bowl, team_b_bowl,
+            venue_adv, winner, win_pct, active_overrides,
+        )
+        if analysis:
+            self._db.update_prediction_analysis(match_id, analysis)
+        return analysis
 
     def get_recent_history(self, limit: int = 10) -> list[dict]:
         return self._db.get_recent_predictions(limit)
@@ -214,7 +260,7 @@ class PredictionTrackerService:
         return self._db.get_accuracy_stats()
 
     # ------------------------------------------------------------------
-    # Gemini AI analysis
+    # LLM AI analysis
     # ------------------------------------------------------------------
 
     def _generate_ai_analysis(
@@ -233,7 +279,7 @@ class PredictionTrackerService:
         win_pct: float,
         active_overrides: list[dict],
     ) -> str | None:
-        """Call Gemini to generate a pre-match analysis."""
+        """Call the configured LLM to generate a pre-match analysis."""
         from cricket_predictor.providers.gemini_provider import generate_match_analysis
 
         # Build injury summary from active overrides
@@ -268,7 +314,7 @@ class PredictionTrackerService:
         try:
             return generate_match_analysis(context)
         except Exception as exc:
-            log.warning("Gemini analysis failed for %s: %s", match.get("match_id"), exc)
+            log.warning("AI analysis failed for %s: %s", match.get("match_id"), exc)
             return None
 
     # ------------------------------------------------------------------

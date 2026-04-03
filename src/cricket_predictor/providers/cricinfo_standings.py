@@ -87,8 +87,12 @@ VENUE_HOME_MAP: dict[str, str] = {
     "narendra modi stadium": "Gujarat Titans",
     "arun jaitley stadium": "Delhi Capitals",
     "sawai mansingh stadium": "Rajasthan Royals",
+    "aca stadium, barsapara": "Rajasthan Royals",
+    "barsapara": "Rajasthan Royals",
     "bharat ratna shri atal bihari vajpayee ekana cricket stadium": "Lucknow Super Giants",
     "ekana": "Lucknow Super Giants",
+    "punjab cricket association is bindra stadium": "Punjab Kings",
+    "bindra stadium": "Punjab Kings",
     "new international cricket stadium": "Punjab Kings",
     "himachal pradesh cricket association stadium": "Punjab Kings",
 }
