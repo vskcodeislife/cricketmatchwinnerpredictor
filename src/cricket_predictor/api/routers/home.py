@@ -310,7 +310,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
   </main>
 
   <footer class="text-center text-xs text-gray-400 py-6">
-    Cricket Predictor · Powered by CricSheet, Cricmetric &amp; GPT-4.1 · Deployed on Render
+    Powered By Varahi AI/ML Services
   </footer>
 
 </body>
