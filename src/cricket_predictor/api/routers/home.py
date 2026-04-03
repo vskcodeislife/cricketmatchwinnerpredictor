@@ -17,7 +17,7 @@ _STATUS_BADGE = {
 }
 
 
-def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, upcoming: list[dict], overrides: list[dict]) -> str:
+def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, upcoming: list[dict]) -> str:
     accuracy = stats.get("accuracy_pct", 0.0)
     total = stats.get("total", 0)
     correct = stats.get("correct", 0)
@@ -175,53 +175,6 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
       </div>
     </div>""" if future_matches else ""
 
-    # ── Override badges (active notes) ────────────────────────────────
-    override_badges = ""
-    for ov in overrides:
-        p = ov.get("parsed", {})
-        desc = p.get("description", ov.get("note", ""))
-        ov_id = ov.get("id", "")
-        bowl_d = p.get("bowl_delta", 0.0)
-        bat_d  = p.get("bat_delta",  0.0)
-        tag_cls = "bg-red-50 border-red-200 text-red-800" if (bowl_d < 0 or bat_d < 0) else "bg-blue-50 border-blue-200 text-blue-800"
-        override_badges += f"""
-        <div class="flex items-center justify-between gap-3 px-4 py-2 rounded-lg border {tag_cls} text-sm">
-          <span>{desc}</span>
-          <a href="/override/delete/{ov_id}" class="text-xs opacity-60 hover:opacity-100 shrink-0" title="Remove">✕</a>
-        </div>"""
-
-    if not override_badges:
-        override_badges = '<p class="text-gray-400 text-sm px-1">No active overrides — predictions use live standings data.</p>'
-
-    overrides_section = f"""
-    <div class="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
-      <div class="px-6 py-4 border-b border-gray-100">
-        <h2 class="font-semibold text-gray-700">🧠 Match Context &amp; Overrides</h2>
-        <p class="text-xs text-gray-400 mt-0.5">Tell the model about injuries, pitch reports, team news · predictions auto-regenerate</p>
-      </div>
-      <div class="p-5 space-y-4">
-        <!-- Active overrides -->
-        <div class="space-y-2">
-          {override_badges}
-        </div>
-        <!-- Input form -->
-        <form method="POST" action="/override" class="space-y-3">
-          <textarea
-            name="note"
-            rows="3"
-            placeholder="e.g. Pat Cummins is injured&#10;KKR missing Varun Chakravarthy&#10;Eden Gardens is a batting pitch today"
-            class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
-          ></textarea>
-          <div class="flex items-center gap-3">
-            <button type="submit"
-              class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2 rounded-lg transition">
-              Apply &amp; Re-predict
-            </button>
-            <a href="/override/clear" class="text-sm text-gray-400 hover:text-red-500 transition">Clear all overrides</a>
-          </div>
-        </form>
-      </div>
-    </div>"""
     rows_html = ""
     if not history:
         rows_html = '<tr><td colspan="6" class="px-4 py-6 text-center text-gray-400">No predictions recorded yet</td></tr>'
@@ -329,9 +282,6 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
     </div>
 
     {upcoming_section}
-
-    {overrides_section}
-
     <!-- Prediction history -->
     <div class="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
       <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -376,8 +326,7 @@ async def homepage() -> HTMLResponse:
     history = tracker.get_recent_history(10)
     stats = tracker.get_accuracy_stats()
     upcoming = tracker._db.get_upcoming_predictions(7)
-    overrides = tracker.get_active_overrides()
-    html = _render_homepage(next_pred, history, stats, upcoming, overrides)
+    html = _render_homepage(next_pred, history, stats, upcoming)
     return HTMLResponse(content=html)
 
 
