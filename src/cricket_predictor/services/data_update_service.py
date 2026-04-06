@@ -17,6 +17,8 @@ from cricket_predictor.config.settings import Settings
 from cricket_predictor.data.cricsheet_loader import CricsheetLoader
 from cricket_predictor.data.predictions_db import PredictionsDB, default_predictions_db_path
 from cricket_predictor.models.training import save_artifacts, train_all
+from cricket_predictor.providers.cricinfo_standings import resolve_team_name
+from cricket_predictor.providers.ipl_csv_provider import IplCsvDataProvider, TeamLeaderStats
 
 log = logging.getLogger(__name__)
 
@@ -44,13 +46,28 @@ class DataUpdateService:
         extracted = self._loader.download_and_extract(urls)
         return self._retrain_from_dirs(extracted, source_label="fresh cricsheet data")
 
-    def retrain_from_local_data(self) -> bool:
-        """Retrain using locally extracted cricsheet data plus completed predictions."""
-        extracted = self._get_local_json_dirs(self._configured_urls())
+    def retrain_from_cricsheet(self, download: bool = False) -> bool:
+        """Retrain from cricsheet archives, optionally downloading fresh copies first."""
+        urls = self._configured_urls()
+        if not urls:
+            log.warning("No cricsheet URLs configured – skipping retrain.")
+            return False
+
+        if download:
+            extracted = self._loader.download_and_extract(urls)
+            source_label = "downloaded cricsheet data"
+        else:
+            extracted = self._get_local_json_dirs(urls)
+            source_label = "local cricsheet data"
+
         if not extracted:
             log.warning("No local cricsheet data found – skipping retrain.")
             return False
-        return self._retrain_from_dirs(extracted, source_label="local cricsheet data")
+        return self._retrain_from_dirs(extracted, source_label=source_label)
+
+    def retrain_from_local_data(self) -> bool:
+        """Retrain using locally extracted cricsheet data plus completed predictions."""
+        return self.retrain_from_cricsheet(download=False)
 
     def get_status(self) -> dict[str, Any]:
         """Return current metadata about each tracked cricsheet source."""
@@ -99,7 +116,8 @@ class DataUpdateService:
         if not feedback_rows:
             return matches_df, 0
 
-        feedback_df = pd.DataFrame(feedback_rows).assign(_feedback_example=1)
+        feedback_df = pd.DataFrame(feedback_rows)
+        feedback_df = self._backfill_feedback_leader_signals(feedback_df).assign(_feedback_example=1)
         base_df = matches_df.copy().assign(_feedback_example=0)
         augmented = pd.concat([base_df, feedback_df], ignore_index=True, sort=False)
         key_columns = {"team_a", "team_b", "match_date"}
@@ -111,6 +129,73 @@ class DataUpdateService:
             )
         augmented = augmented.drop(columns=["_feedback_example"], errors="ignore")
         return augmented, len(feedback_df)
+
+    def _backfill_feedback_leader_signals(self, feedback_df: pd.DataFrame) -> pd.DataFrame:
+        if feedback_df.empty or not self._settings.ipl_csv_data_dir:
+            return feedback_df
+
+        leader_lookup = IplCsvDataProvider(self._settings.ipl_csv_data_dir).team_leader_stats_lookup()
+        if not leader_lookup:
+            return feedback_df
+
+        enriched = feedback_df.copy()
+        for column in (
+            "team_a_top_run_getters_runs",
+            "team_b_top_run_getters_runs",
+            "team_a_top_wicket_takers_wickets",
+            "team_b_top_wicket_takers_wickets",
+        ):
+            if column not in enriched.columns:
+                enriched[column] = pd.NA
+
+        self._fill_leader_column(
+            enriched,
+            team_column="team_a",
+            value_column="team_a_top_run_getters_runs",
+            extractor=lambda stats: stats.top_run_getters_runs,
+            leader_lookup=leader_lookup,
+        )
+        self._fill_leader_column(
+            enriched,
+            team_column="team_b",
+            value_column="team_b_top_run_getters_runs",
+            extractor=lambda stats: stats.top_run_getters_runs,
+            leader_lookup=leader_lookup,
+        )
+        self._fill_leader_column(
+            enriched,
+            team_column="team_a",
+            value_column="team_a_top_wicket_takers_wickets",
+            extractor=lambda stats: stats.top_wicket_takers_wickets,
+            leader_lookup=leader_lookup,
+        )
+        self._fill_leader_column(
+            enriched,
+            team_column="team_b",
+            value_column="team_b_top_wicket_takers_wickets",
+            extractor=lambda stats: stats.top_wicket_takers_wickets,
+            leader_lookup=leader_lookup,
+        )
+        return enriched
+
+    def _fill_leader_column(
+        self,
+        frame: pd.DataFrame,
+        *,
+        team_column: str,
+        value_column: str,
+        extractor,
+        leader_lookup: dict[str, TeamLeaderStats],
+    ) -> None:
+        numeric = pd.to_numeric(frame[value_column], errors="coerce")
+        needs_fill = numeric.isna() | (numeric <= 0)
+        if not needs_fill.any():
+            return
+
+        fallback_values = frame[team_column].map(
+            lambda team: extractor(leader_lookup.get(resolve_team_name(str(team)), TeamLeaderStats()))
+        )
+        frame.loc[needs_fill, value_column] = fallback_values[needs_fill]
 
     def _retrain_from_dirs(self, json_dirs: list[Path], source_label: str) -> bool:
         if not json_dirs:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import logging
 from functools import lru_cache
 from pathlib import Path
@@ -55,8 +56,11 @@ class PredictionService:
         return self._live_predictions
 
     def predict_match(self, payload: MatchPredictionRequest) -> dict:
-        feature_row = build_match_feature_frame([payload.model_dump()])
-        team_a_probability = float(self._match_model.predict_proba(feature_row)[0][1])
+        forward_probability = self._predict_team_a_probability(payload)
+        reverse_probability = self._predict_team_a_probability(self._swap_match_payload(payload))
+        team_a_probability = (forward_probability + (1.0 - reverse_probability)) / 2.0
+        team_a_probability = self._apply_match_signal_adjustment(team_a_probability, payload)
+        team_a_probability = min(max(team_a_probability, 0.01), 0.99)
         team_b_probability = 1.0 - team_a_probability
         predicted_winner = payload.team_a if team_a_probability >= 0.5 else payload.team_b
         confidence = abs(team_a_probability - 0.5) * 2
@@ -102,12 +106,24 @@ class PredictionService:
         if payload.venue_advantage_team_a > 0:
             factors.append(f"{payload.team_a} carries home or venue familiarity advantage")
         if payload.head_to_head_win_pct_team_a > 0.55:
-            factors.append(f"{payload.team_a} has the stronger recent head-to-head record")
+            factors.append(f"{payload.team_a} has the stronger last-7 head-to-head record")
+        elif payload.head_to_head_win_pct_team_a < 0.45:
+            factors.append(f"{payload.team_b} has the stronger last-7 head-to-head record")
         form_gap = payload.team_a_recent_form - payload.team_b_recent_form
         if form_gap > 0.08:
             factors.append(f"{payload.team_a} enters with better recent form")
         elif form_gap < -0.08:
             factors.append(f"{payload.team_b} enters with better recent form")
+        top_run_gap = payload.team_a_top_run_getters_runs - payload.team_b_top_run_getters_runs
+        if top_run_gap > 50:
+            factors.append(f"{payload.team_a} has the stronger top run-getters this season")
+        elif top_run_gap < -50:
+            factors.append(f"{payload.team_b} has the stronger top run-getters this season")
+        top_wicket_gap = payload.team_a_top_wicket_takers_wickets - payload.team_b_top_wicket_takers_wickets
+        if top_wicket_gap > 3:
+            factors.append(f"{payload.team_a} has the stronger top wicket-takers this season")
+        elif top_wicket_gap < -3:
+            factors.append(f"{payload.team_b} has the stronger top wicket-takers this season")
         if payload.toss_winner == payload.team_a and payload.toss_decision == "bat":
             factors.append(f"{payload.team_a} won the toss and chose the more favorable setup")
         if payload.dew_probability > 0.5 and payload.night_match:
@@ -135,6 +151,56 @@ class PredictionService:
         if payload.pitch_batting_bias > 0.3:
             factors.append("Pitch conditions favour batters today")
         return factors[:4] or ["Prediction is driven by average, strike rate, venue, and matchup balance"]
+
+    def _predict_team_a_probability(self, payload: MatchPredictionRequest) -> float:
+        feature_row = build_match_feature_frame([payload.model_dump()])
+        return float(self._match_model.predict_proba(feature_row)[0][1])
+
+    def _swap_match_payload(self, payload: MatchPredictionRequest) -> MatchPredictionRequest:
+        toss_winner = payload.toss_winner
+        if payload.toss_winner == payload.team_a:
+            toss_winner = payload.team_b
+        elif payload.toss_winner == payload.team_b:
+            toss_winner = payload.team_a
+
+        return payload.model_copy(
+            update={
+                "team_a": payload.team_b,
+                "team_b": payload.team_a,
+                "toss_winner": toss_winner,
+                "team_a_recent_form": payload.team_b_recent_form,
+                "team_b_recent_form": payload.team_a_recent_form,
+                "team_a_batting_strength": payload.team_b_batting_strength,
+                "team_b_batting_strength": payload.team_a_batting_strength,
+                "team_a_bowling_strength": payload.team_b_bowling_strength,
+                "team_b_bowling_strength": payload.team_a_bowling_strength,
+                "head_to_head_win_pct_team_a": 1.0 - payload.head_to_head_win_pct_team_a,
+                "venue_advantage_team_a": -1.0 * payload.venue_advantage_team_a,
+                "team_a_top_run_getters_runs": payload.team_b_top_run_getters_runs,
+                "team_b_top_run_getters_runs": payload.team_a_top_run_getters_runs,
+                "team_a_top_wicket_takers_wickets": payload.team_b_top_wicket_takers_wickets,
+                "team_b_top_wicket_takers_wickets": payload.team_a_top_wicket_takers_wickets,
+            }
+        )
+
+    def _apply_match_signal_adjustment(
+        self,
+        team_a_probability: float,
+        payload: MatchPredictionRequest,
+    ) -> float:
+        clamped_probability = min(max(team_a_probability, 0.01), 0.99)
+        logit = math.log(clamped_probability / (1.0 - clamped_probability))
+
+        run_gap = payload.team_a_top_run_getters_runs - payload.team_b_top_run_getters_runs
+        wicket_gap = payload.team_a_top_wicket_takers_wickets - payload.team_b_top_wicket_takers_wickets
+        signal_shift = (
+            0.75 * (payload.team_a_recent_form - payload.team_b_recent_form)
+            + 0.55 * (payload.head_to_head_win_pct_team_a - 0.5)
+            + 0.0018 * run_gap
+            + 0.045 * wicket_gap
+        )
+        signal_shift = max(min(signal_shift, 1.1), -1.1)
+        return 1.0 / (1.0 + math.exp(-(logit + signal_shift)))
 
     def reload_models(self) -> None:
         """Hot-reload model artifacts from disk after a retrain."""

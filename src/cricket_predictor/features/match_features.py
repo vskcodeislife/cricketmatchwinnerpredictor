@@ -19,6 +19,10 @@ MATCH_FEATURE_COLUMNS = [
     "team_b_bowling_strength",
     "head_to_head_win_pct_team_a",
     "venue_advantage_team_a",
+    "team_a_top_run_getters_runs",
+    "team_b_top_run_getters_runs",
+    "team_a_top_wicket_takers_wickets",
+    "team_b_top_wicket_takers_wickets",
     # Venue behavioral features (from cricmetric)
     "avg_first_innings_score",
     "chase_win_pct",
@@ -62,5 +66,14 @@ def build_match_feature_frame(records: list[dict] | pd.DataFrame) -> pd.DataFram
         frame["night_match"] = 1.0
     else:
         frame["night_match"] = frame["night_match"].astype(float)
+
+    for column in (
+        "team_a_top_run_getters_runs",
+        "team_b_top_run_getters_runs",
+        "team_a_top_wicket_takers_wickets",
+        "team_b_top_wicket_takers_wickets",
+    ):
+        if column not in frame.columns:
+            frame[column] = 0.0
 
     return frame[MATCH_FEATURE_COLUMNS].copy()

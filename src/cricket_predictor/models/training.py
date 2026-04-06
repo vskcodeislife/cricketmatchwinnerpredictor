@@ -24,6 +24,10 @@ MATCH_NUMERIC_COLUMNS = [
     "team_b_bowling_strength",
     "head_to_head_win_pct_team_a",
     "venue_advantage_team_a",
+    "team_a_top_run_getters_runs",
+    "team_b_top_run_getters_runs",
+    "team_a_top_wicket_takers_wickets",
+    "team_b_top_wicket_takers_wickets",
     # Venue behavioral features
     "avg_first_innings_score",
     "chase_win_pct",

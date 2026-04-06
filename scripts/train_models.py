@@ -20,44 +20,23 @@ from pathlib import Path
 from cricket_predictor.config.settings import get_settings
 from cricket_predictor.data.dataset_generator import save_synthetic_datasets
 from cricket_predictor.models.training import save_artifacts, train_all
+from cricket_predictor.services.data_update_service import DataUpdateService
 
 
 def _train_from_cricsheet(settings, download: bool) -> bool:
     """Try to train from cricsheet data; return True on success."""
-    from cricket_predictor.data.cricsheet_loader import CricsheetLoader
-
-    loader = CricsheetLoader(settings.cricsheet_data_dir)
-    urls = [settings.cricsheet_ipl_url, settings.cricsheet_t20_url, settings.cricsheet_recent_url]
-
+    service = DataUpdateService(settings)
     if download:
-        print("Checking for cricsheet updates …")
-        extracted = loader.download_and_extract(urls)
+        print("Downloading cricsheet archives and retraining …")
     else:
-        # Use already-extracted directories if they exist on disk
-        extracted = [
-            Path(settings.cricsheet_data_dir) / Path(u).stem
-            for u in urls
-            if (Path(settings.cricsheet_data_dir) / Path(u).stem).exists()
-        ]
+        print("Retraining from local cricsheet data and saved feedback …")
 
-    if not extracted:
-        print("No cricsheet data found locally. Run with --download to fetch it.")
+    trained = service.retrain_from_cricsheet(download=download)
+    if not trained:
+        print("No usable cricsheet data found locally. Run with --download to fetch it.")
         return False
 
-    print(f"Parsing {len(extracted)} source(s) …")
-    matches_df = loader.parse_matches(extracted)
-    players_df = loader.parse_player_stats(extracted)
-
-    if matches_df.empty or players_df.empty:
-        print(f"Parsed data is empty (matches={len(matches_df)}, players={len(players_df)}).")
-        return False
-
-    artifacts = train_all(matches_df, players_df)
-    save_artifacts(artifacts, settings.model_artifact_dir)
-    print(
-        f"Models trained on cricsheet data: "
-        f"{len(matches_df)} matches, {len(players_df)} players."
-    )
+    print("Models trained on cricsheet data with feedback-aware retraining.")
     return True
 
 

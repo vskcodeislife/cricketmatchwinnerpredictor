@@ -65,7 +65,8 @@ Live update endpoints:
 Local CSV option:
 
 - `IplCsvDataProvider` can read a local IPL CSV export such as the IPL 2026 Kaggle dataset.
-- Supported files are `matches.csv`, `points_table.csv`, and optionally `deliveries.csv` for batting and bowling strength derivation.
+- Supported core files are `matches.csv` and `points_table.csv`.
+- Optional files are `deliveries.csv` for batting and bowling strength derivation, plus `orange_cap.csv`, `purple_cap.csv`, and `squads.csv` to feed season leader signals such as top run-getters and wicket-takers.
 - The same CSV export is also used by the prediction tracker as an extra completed-match result fallback when `CRICKET_PREDICTOR_IPL_CSV_DATA_DIR` is set.
 - A daily refresh loop can also run a user-provided sync command first, then reload winners, future predictions, and live contexts from the refreshed CSV files.
 
@@ -98,11 +99,14 @@ uvicorn cricket_predictor.api.app:app --reload --app-dir src
 - `CRICKET_PREDICTOR_ENABLE_IPL_CSV_REFRESH=true`
 - `CRICKET_PREDICTOR_IPL_CSV_REFRESH_HOURS=24`
 - `CRICKET_PREDICTOR_IPL_CSV_REFRESH_COMMAND=/absolute/path/to/scripts/refresh_ipl_csv.sh`
+- `CRICKET_PREDICTOR_IPL_CSV_DOWNLOAD_URL=https://www.kaggle.com/api/v1/datasets/download/krishd123/ipl-2026-complete-dataset`
+- `KAGGLE_USERNAME=your-kaggle-username`
+- `KAGGLE_KEY=your-kaggle-api-key`
 - `CRICKET_PREDICTOR_AZURE_OPENAI_API_KEY=your-key` — Enables AI pre-match analysis via Azure OpenAI GPT-4.1
 - `CRICKET_PREDICTOR_AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com`
 - `CRICKET_PREDICTOR_AZURE_OPENAI_DEPLOYMENT=gpt-4.1`
 
-For Kaggle-backed updates, the app can only automate the refresh if your command downloads or exports the CSVs into `CRICKET_PREDICTOR_IPL_CSV_DATA_DIR`. The notebook URL itself is not a direct file endpoint, so the practical setup is to point `CRICKET_PREDICTOR_IPL_CSV_REFRESH_COMMAND` at a local script that uses your Kaggle credentials or another sync step.
+For Kaggle-backed updates, the bundled refresh script uses `curl` against the Kaggle dataset download endpoint and authenticates with `KAGGLE_USERNAME` and `KAGGLE_KEY`. It downloads the archive, extracts it, and copies `matches.csv`, `points_table.csv`, `orange_cap.csv`, `purple_cap.csv`, `squads.csv`, and any optional files such as `deliveries.csv` into `CRICKET_PREDICTOR_IPL_CSV_DATA_DIR`.
 
 ## Example Requests
 

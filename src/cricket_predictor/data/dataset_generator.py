@@ -95,6 +95,10 @@ def build_synthetic_datasets(seed: int = 42) -> GeneratedDatasets:
         toss_decision = rng.choice(TOSS_DECISIONS)
         head_to_head = rng.uniform(0.35, 0.65)
         venue_advantage_team_a = 1.0 if home_team == team_a else -1.0 if home_team == team_b else 0.0
+        team_a_top_run_getters_runs = max(120.0, team_a_stats["batting_strength"] * 7.2 + rng.normal(0, 35))
+        team_b_top_run_getters_runs = max(120.0, team_b_stats["batting_strength"] * 7.2 + rng.normal(0, 35))
+        team_a_top_wicket_takers_wickets = max(4.0, team_a_stats["bowling_strength"] * 0.28 + rng.normal(0, 1.8))
+        team_b_top_wicket_takers_wickets = max(4.0, team_b_stats["bowling_strength"] * 0.28 + rng.normal(0, 1.8))
         # Match condition features
         night_match = float(rng.integers(0, 2))
         dew_probability = float(rng.uniform(0.1, 0.7)) if night_match else float(rng.uniform(0.0, 0.2))
@@ -110,6 +114,8 @@ def build_synthetic_datasets(seed: int = 42) -> GeneratedDatasets:
             + 0.025 * (team_a_stats["bowling_strength"] - team_b_stats["bowling_strength"])
             + 1.1 * (team_a_stats["recent_form"] - team_b_stats["recent_form"])
             + 0.9 * (head_to_head - 0.5)
+            + 0.0015 * (team_a_top_run_getters_runs - team_b_top_run_getters_runs)
+            + 0.035 * (team_a_top_wicket_takers_wickets - team_b_top_wicket_takers_wickets)
             + 0.18 * venue_advantage_team_a
             + format_factor
             + pitch_factor
@@ -134,6 +140,10 @@ def build_synthetic_datasets(seed: int = 42) -> GeneratedDatasets:
                 "team_b_bowling_strength": team_b_stats["bowling_strength"],
                 "head_to_head_win_pct_team_a": round(head_to_head, 3),
                 "venue_advantage_team_a": venue_advantage_team_a,
+                "team_a_top_run_getters_runs": round(team_a_top_run_getters_runs, 2),
+                "team_b_top_run_getters_runs": round(team_b_top_run_getters_runs, 2),
+                "team_a_top_wicket_takers_wickets": round(team_a_top_wicket_takers_wickets, 2),
+                "team_b_top_wicket_takers_wickets": round(team_b_top_wicket_takers_wickets, 2),
                 "dew_probability": round(dew_probability, 3),
                 "pitch_batting_bias": round(pitch_batting_bias, 3),
                 "spin_effectiveness": round(spin_effectiveness, 3),

@@ -252,6 +252,9 @@ class CricsheetLoader:
         # Extract per-team run totals and wickets taken from innings blocks
         team_runs: dict[str, int] = {}
         team_wickets_taken: dict[str, int] = {}
+        batter_runs: dict[str, dict[str, int]] = {team_a: {}, team_b: {}}
+        bowler_wickets: dict[str, dict[str, int]] = {team_a: {}, team_b: {}}
+        non_bowler_dismissals = {"run out", "retired hurt", "retired out", "obstructing the field"}
         for innings in data.get("innings", []):
             batting_team = innings.get("team")
             if not batting_team:
@@ -262,6 +265,28 @@ class CricsheetLoader:
                 for delivery in over.get("deliveries", []):
                     runs += delivery.get("runs", {}).get("total", 0)
                     wickets += len(delivery.get("wickets", []))
+                    batter = delivery.get("batter")
+                    if batter:
+                        batter_runs.setdefault(batting_team, {})[batter] = (
+                            batter_runs.setdefault(batting_team, {}).get(batter, 0)
+                            + delivery.get("runs", {}).get("batter", 0)
+                        )
+                    dismissal_list = delivery.get("wickets", [])
+                    if not dismissal_list:
+                        continue
+                    bowler = delivery.get("bowler")
+                    bowling_team = team_b if batting_team == team_a else team_a
+                    if not bowler:
+                        continue
+                    credited = sum(
+                        1
+                        for wicket in dismissal_list
+                        if str(wicket.get("kind", "")).lower() not in non_bowler_dismissals
+                    )
+                    if credited:
+                        bowler_wickets.setdefault(bowling_team, {})[bowler] = (
+                            bowler_wickets.setdefault(bowling_team, {}).get(bowler, 0) + credited
+                        )
             team_runs[batting_team] = team_runs.get(batting_team, 0) + runs
             bowling_team = team_b if batting_team == team_a else team_a
             team_wickets_taken[bowling_team] = team_wickets_taken.get(bowling_team, 0) + wickets
@@ -281,6 +306,10 @@ class CricsheetLoader:
             "_tb_runs": team_runs.get(team_b, 120),
             "_ta_wkts": team_wickets_taken.get(team_a, 5),
             "_tb_wkts": team_wickets_taken.get(team_b, 5),
+            "_ta_batter_runs": batter_runs.get(team_a, {}),
+            "_tb_batter_runs": batter_runs.get(team_b, {}),
+            "_ta_bowler_wickets": bowler_wickets.get(team_a, {}),
+            "_tb_bowler_wickets": bowler_wickets.get(team_b, {}),
         }
 
     def _compute_rolling_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -291,7 +320,9 @@ class CricsheetLoader:
         recent_wins: dict[str, list[int]] = {}
         team_batting: dict[str, list[float]] = {}
         team_bowling: dict[str, list[float]] = {}
-        h2h: dict[tuple[str, str], dict[str, int]] = {}
+        h2h: dict[tuple[str, str], list[int]] = {}
+        season_batter_totals: dict[tuple[str, str], dict[str, int]] = {}
+        season_bowler_totals: dict[tuple[str, str], dict[str, int]] = {}
 
         computed_rows: list[dict[str, Any]] = []
 
@@ -299,6 +330,8 @@ class CricsheetLoader:
             ta, tb = str(row["team_a"]), str(row["team_b"])
             venue_name = str(row.get("venue", ""))
             key: tuple[str, str] = (min(ta, tb), max(ta, tb))
+            season_key_a = (str(row.get("match_date", "2000-01-01"))[:4], ta)
+            season_key_b = (str(row.get("match_date", "2000-01-01"))[:4], tb)
 
             # Recent form: win rate over last 5 matches per team
             wta = recent_wins.get(ta, [])[-5:]
@@ -306,9 +339,15 @@ class CricsheetLoader:
             form_a = float(np.mean(wta)) if wta else 0.5
             form_b = float(np.mean(wtb)) if wtb else 0.5
 
-            # Head-to-head win % for team_a
-            prev = h2h.get(key, {"wins_a": 0, "total": 0})
-            h2h_pct = prev["wins_a"] / prev["total"] if prev["total"] > 0 else 0.5
+            # Head-to-head win % for team_a over the last 7 meetings.
+            prev = h2h.get(key, [])[-7:]
+            if prev:
+                if ta == key[0]:
+                    h2h_pct = float(np.mean(prev))
+                else:
+                    h2h_pct = float(np.mean([1 - outcome for outcome in prev]))
+            else:
+                h2h_pct = 0.5
 
             # Batting strength: normalise rolling average innings runs to [40, 100]
             bat_a = float(np.clip(np.mean(team_batting.get(ta, [120.0])[-10:]) * 0.45, 40, 100))
@@ -317,6 +356,11 @@ class CricsheetLoader:
             # Bowling strength: normalise rolling average wickets taken to [40, 100]
             bowl_a = float(np.clip(np.mean(team_bowling.get(ta, [6.0])[-10:]) * 9.0, 40, 100))
             bowl_b = float(np.clip(np.mean(team_bowling.get(tb, [6.0])[-10:]) * 9.0, 40, 100))
+
+            top_runs_a = sum(sorted(season_batter_totals.get(season_key_a, {}).values(), reverse=True)[:3])
+            top_runs_b = sum(sorted(season_batter_totals.get(season_key_b, {}).values(), reverse=True)[:3])
+            top_wickets_a = sum(sorted(season_bowler_totals.get(season_key_a, {}).values(), reverse=True)[:3])
+            top_wickets_b = sum(sorted(season_bowler_totals.get(season_key_b, {}).values(), reverse=True)[:3])
 
             computed_rows.append(
                 {
@@ -327,6 +371,10 @@ class CricsheetLoader:
                     "team_b_batting_strength": round(bat_b, 2),
                     "team_a_bowling_strength": round(bowl_a, 2),
                     "team_b_bowling_strength": round(bowl_b, 2),
+                    "team_a_top_run_getters_runs": round(float(top_runs_a), 2),
+                    "team_b_top_run_getters_runs": round(float(top_runs_b), 2),
+                    "team_a_top_wicket_takers_wickets": round(float(top_wickets_a), 2),
+                    "team_b_top_wicket_takers_wickets": round(float(top_wickets_b), 2),
                     # Compute real venue advantage — cricket venues have identifiable home teams.
                     # Correctly rewards home ground familiarity that the raw cricsheet JSON omits.
                     "venue_advantage_team_a": _compute_venue_advantage(venue_name, ta, tb),
@@ -338,23 +386,44 @@ class CricsheetLoader:
             recent_wins.setdefault(ta, []).append(won)
             recent_wins.setdefault(tb, []).append(1 - won)
 
-            h2h_entry = h2h.setdefault(key, {"wins_a": 0, "total": 0})
-            h2h_entry["total"] += 1
-            # Ensure h2h is always from the perspective of key[0]
             if ta == key[0]:
-                h2h_entry["wins_a"] += won
+                h2h.setdefault(key, []).append(won)
             else:
-                h2h_entry["wins_a"] += 1 - won
+                h2h.setdefault(key, []).append(1 - won)
 
             team_batting.setdefault(ta, []).append(float(row["_ta_runs"]))
             team_batting.setdefault(tb, []).append(float(row["_tb_runs"]))
             team_bowling.setdefault(ta, []).append(float(row["_ta_wkts"]))
             team_bowling.setdefault(tb, []).append(float(row["_tb_wkts"]))
 
+            batter_totals_a = season_batter_totals.setdefault(season_key_a, {})
+            for player, runs in row.get("_ta_batter_runs", {}).items():
+                batter_totals_a[player] = batter_totals_a.get(player, 0) + int(runs)
+            batter_totals_b = season_batter_totals.setdefault(season_key_b, {})
+            for player, runs in row.get("_tb_batter_runs", {}).items():
+                batter_totals_b[player] = batter_totals_b.get(player, 0) + int(runs)
+
+            bowler_totals_a = season_bowler_totals.setdefault(season_key_a, {})
+            for player, wickets in row.get("_ta_bowler_wickets", {}).items():
+                bowler_totals_a[player] = bowler_totals_a.get(player, 0) + int(wickets)
+            bowler_totals_b = season_bowler_totals.setdefault(season_key_b, {})
+            for player, wickets in row.get("_tb_bowler_wickets", {}).items():
+                bowler_totals_b[player] = bowler_totals_b.get(player, 0) + int(wickets)
+
         computed = pd.DataFrame(computed_rows, index=df.index)
         result = pd.concat([df, computed], axis=1)
         return result.drop(
-            columns=["match_date", "_ta_runs", "_tb_runs", "_ta_wkts", "_tb_wkts"],
+            columns=[
+                "match_date",
+                "_ta_runs",
+                "_tb_runs",
+                "_ta_wkts",
+                "_tb_wkts",
+                "_ta_batter_runs",
+                "_tb_batter_runs",
+                "_ta_bowler_wickets",
+                "_tb_bowler_wickets",
+            ],
             errors="ignore",
         )
 

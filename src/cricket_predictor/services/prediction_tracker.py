@@ -26,6 +26,7 @@ from cricket_predictor.providers.cricinfo_standings import (
 )
 from cricket_predictor.providers.ipl_csv_provider import IplCsvDataProvider
 from cricket_predictor.providers.ipl_schedule import IPLScheduleProvider
+from cricket_predictor.services.match_context_service import get_match_context_service
 from cricket_predictor.services.override_parser import apply_overrides, parse_override
 from cricket_predictor.services.standings_service import get_standings_service
 
@@ -63,7 +64,7 @@ class PredictionTrackerService:
         from cricket_predictor.services.prediction_service import get_prediction_service
 
         svc = get_prediction_service()
-        standings = get_standings_service()
+        context_service = get_match_context_service(self._settings)
         new_predictions: list[dict] = []
 
         for match in self._schedule.upcoming_matches():
@@ -73,49 +74,37 @@ class PredictionTrackerService:
             team_a = match["team_a"]
             team_b = match["team_b"]
 
-            # Pull live standings data for team context
-            ta_standing = standings.get_team(team_a)
-            tb_standing = standings.get_team(team_b)
-
-            # NRR is meaningless until a team has played a few games; fall back
-            # to neutral (65.0) to avoid early-season noise corrupting the model.
-            ta_games = ta_standing.played if ta_standing else 0
-            tb_games = tb_standing.played if tb_standing else 0
-            team_a_form = standings.recent_form(team_a)
-            team_b_form = standings.recent_form(team_b)
-            team_a_bat  = standings.batting_strength(team_a)  if ta_games >= _MIN_GAMES_FOR_NRR else 65.0
-            team_b_bat  = standings.batting_strength(team_b)  if tb_games >= _MIN_GAMES_FOR_NRR else 65.0
-            team_a_bowl = standings.bowling_strength(team_a)  if ta_games >= _MIN_GAMES_FOR_NRR else 65.0
-            team_b_bowl = standings.bowling_strength(team_b)  if tb_games >= _MIN_GAMES_FOR_NRR else 65.0
-
-            # Apply any active overrides (injuries, pitch notes, etc.)
-            active_overrides = self._db.get_active_overrides()
-            parsed_overrides = [o["parsed"] for o in active_overrides]
-            team_a_bat, team_b_bat, team_a_bowl, team_b_bowl = apply_overrides(
-                team_a, team_b, team_a_bat, team_b_bat, team_a_bowl, team_b_bowl,
-                parsed_overrides,
-            )
-
-            # Home ground advantage (+1.0 = team_a home, -1.0 = team_b home)
-            venue_adv = venue_advantage(match["venue"], team_a, team_b)
-
-            request = MatchPredictionRequest(
+            request = context_service.build_request(
                 team_a=team_a,
                 team_b=team_b,
                 venue=match["venue"],
                 match_format="T20",
                 pitch_type="balanced",
-                toss_winner="Unknown",  # Toss not known pre-match
+                toss_winner="Unknown",
                 toss_decision="bat",
-                team_a_recent_form=team_a_form,
-                team_b_recent_form=team_b_form,
-                team_a_batting_strength=team_a_bat,
-                team_b_batting_strength=team_b_bat,
-                team_a_bowling_strength=team_a_bowl,
-                team_b_bowling_strength=team_b_bowl,
-                head_to_head_win_pct_team_a=0.5,
-                venue_advantage_team_a=venue_adv,
                 night_match=True,
+            )
+
+            # Apply any active overrides (injuries, pitch notes, etc.)
+            active_overrides = self._db.get_active_overrides()
+            parsed_overrides = [o["parsed"] for o in active_overrides]
+            team_a_bat, team_b_bat, team_a_bowl, team_b_bowl = apply_overrides(
+                team_a,
+                team_b,
+                request.team_a_batting_strength,
+                request.team_b_batting_strength,
+                request.team_a_bowling_strength,
+                request.team_b_bowling_strength,
+                parsed_overrides,
+            )
+
+            request = request.model_copy(
+                update={
+                    "team_a_batting_strength": team_a_bat,
+                    "team_b_batting_strength": team_b_bat,
+                    "team_a_bowling_strength": team_a_bowl,
+                    "team_b_bowling_strength": team_b_bowl,
+                }
             )
 
             result = svc.predict_match(request)

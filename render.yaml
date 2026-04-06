@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: starter        # $7/mo — always on, required for background loops
     buildCommand: pip install -e .
-    startCommand: uvicorn cricket_predictor.api.app:app --host 0.0.0.0 --port $PORT --app-dir src
+    startCommand: mkdir -p /app/data/models /app/data/ipl_csv && if [ ! -f /app/data/models/match_model.joblib ]; then cp artifacts/models/*.joblib /app/data/models/; fi && uvicorn cricket_predictor.api.app:app --host 0.0.0.0 --port $PORT --app-dir src
     healthCheckPath: /health
     envVars:
       - key: CRICKET_PREDICTOR_ENABLE_STANDINGS_REFRESH
@@ -13,7 +13,7 @@ services:
       - key: CRICKET_PREDICTOR_STANDINGS_REFRESH_MINUTES
         value: "30"
       - key: CRICKET_PREDICTOR_ENABLE_CRICSHEET_UPDATES
-        value: "true"
+        value: "false"
       - key: CRICKET_PREDICTOR_CRICSHEET_CHECK_INTERVAL_HOURS
         value: "24"
       - key: CRICKET_PREDICTOR_TRACKER_INTERVAL_SECONDS
@@ -31,7 +31,9 @@ services:
       - key: CRICKET_PREDICTOR_IPL_CSV_REFRESH_HOURS
         value: "24"
       - key: CRICKET_PREDICTOR_IPL_CSV_REFRESH_COMMAND
-        value: /app/scripts/refresh_ipl_csv.sh
+        value: sh /opt/render/project/src/scripts/refresh_ipl_csv.sh
+      - key: CRICKET_PREDICTOR_IPL_CSV_DOWNLOAD_URL
+        value: https://www.kaggle.com/api/v1/datasets/download/krishd123/ipl-2026-complete-dataset
       - key: CRICKET_PREDICTOR_MODEL_ARTIFACT_DIR
         value: /app/data/models
       - key: CRICKET_PREDICTOR_SYNTHETIC_DATA_DIR

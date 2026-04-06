@@ -37,6 +37,10 @@ class MatchPredictionRequest(BaseModel):
     team_b_bowling_strength: float = Field(..., ge=0.0, le=100.0)
     head_to_head_win_pct_team_a: float = Field(..., ge=0.0, le=1.0)
     venue_advantage_team_a: float = Field(..., ge=-1.0, le=1.0)
+    team_a_top_run_getters_runs: float = Field(default=0.0, ge=0.0)
+    team_b_top_run_getters_runs: float = Field(default=0.0, ge=0.0)
+    team_a_top_wicket_takers_wickets: float = Field(default=0.0, ge=0.0)
+    team_b_top_wicket_takers_wickets: float = Field(default=0.0, ge=0.0)
     # Optional match condition overrides
     dew_probability: float = Field(default=0.3, ge=0.0, le=1.0, description="0=no dew, 1=heavy dew (night match)")
     pitch_batting_bias: float = Field(default=0.0, ge=-1.0, le=1.0, description="-1=bowler friendly, +1=batting friendly")

@@ -155,6 +155,92 @@ def test_local_retrain_prefers_prediction_feedback_for_completed_match(monkeypat
     assert len(captured["players"]) == 1
 
 
+def test_local_retrain_backfills_cap_table_signals_for_legacy_feedback(monkeypatch, tmp_path) -> None:
+    dataset_dir = tmp_path / "ipl_csv"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {"player_name": "Ruturaj Gaikwad", "runs": 310},
+            {"player_name": "Shivam Dube", "runs": 220},
+            {"player_name": "Rachin Ravindra", "runs": 180},
+            {"player_name": "Suryakumar Yadav", "runs": 280},
+            {"player_name": "Tilak Varma", "runs": 175},
+            {"player_name": "Rohit Sharma", "runs": 165},
+        ]
+    ).to_csv(dataset_dir / "orange_cap.csv", index=False)
+    pd.DataFrame(
+        [
+            {"player_name": "Matheesha Pathirana", "wickets": 12},
+            {"player_name": "Ravindra Jadeja", "wickets": 9},
+            {"player_name": "Noor Ahmad", "wickets": 8},
+            {"player_name": "Jasprit Bumrah", "wickets": 11},
+            {"player_name": "Trent Boult", "wickets": 7},
+            {"player_name": "Deepak Chahar", "wickets": 6},
+        ]
+    ).to_csv(dataset_dir / "purple_cap.csv", index=False)
+    pd.DataFrame(
+        [
+            {"team": "CSK", "player_name": "Ruturaj Gaikwad"},
+            {"team": "CSK", "player_name": "Shivam Dube"},
+            {"team": "CSK", "player_name": "Rachin Ravindra"},
+            {"team": "CSK", "player_name": "Matheesha Pathirana"},
+            {"team": "CSK", "player_name": "Ravindra Jadeja"},
+            {"team": "CSK", "player_name": "Noor Ahmad"},
+            {"team": "MI", "player_name": "Suryakumar Yadav"},
+            {"team": "MI", "player_name": "Tilak Varma"},
+            {"team": "MI", "player_name": "Rohit Sharma"},
+            {"team": "MI", "player_name": "Jasprit Bumrah"},
+            {"team": "MI", "player_name": "Trent Boult"},
+        ]
+    ).to_csv(dataset_dir / "squads.csv", index=False)
+
+    settings = Settings(
+        model_artifact_dir=str(tmp_path / "artifacts" / "models"),
+        synthetic_data_dir=str(tmp_path / "data" / "synthetic"),
+        cricsheet_data_dir=str(tmp_path / "data" / "cricsheet"),
+        ipl_csv_data_dir=str(dataset_dir),
+    )
+    db = PredictionsDB(default_predictions_db_path(settings.model_artifact_dir))
+    db.save_prediction(
+        match_id="ipl-legacy-caps",
+        team_a="Chennai Super Kings",
+        team_b="Mumbai Indians",
+        venue="MA Chidambaram Stadium",
+        match_date="2026-04-05",
+        predicted_winner="Chennai Super Kings",
+        team_a_probability=0.56,
+        team_b_probability=0.44,
+        confidence_score=0.12,
+        explanation="test",
+        ai_analysis="",
+        feature_snapshot=_feature_snapshot(),
+    )
+    db.record_result("ipl-legacy-caps", "Chennai Super Kings")
+
+    service = DataUpdateService(settings)
+    monkeypatch.setattr(service, "_get_local_json_dirs", lambda urls: [tmp_path / "data" / "cricsheet"])
+    monkeypatch.setattr(service._loader, "parse_matches", lambda _: pd.DataFrame())
+    monkeypatch.setattr(service._loader, "parse_player_stats", lambda _: _player_training_frame())
+
+    captured: dict[str, pd.DataFrame] = {}
+
+    def fake_train_all(matches: pd.DataFrame, players: pd.DataFrame) -> SimpleNamespace:
+        captured["matches"] = matches.copy()
+        captured["players"] = players.copy()
+        return SimpleNamespace(match_model="match", player_model="player")
+
+    monkeypatch.setattr("cricket_predictor.services.data_update_service.train_all", fake_train_all)
+    monkeypatch.setattr("cricket_predictor.services.data_update_service.save_artifacts", lambda *args: None)
+
+    assert service.retrain_from_local_data() is True
+
+    trained_match = captured["matches"].iloc[0]
+    assert trained_match["team_a_top_run_getters_runs"] == 710.0
+    assert trained_match["team_b_top_run_getters_runs"] == 620.0
+    assert trained_match["team_a_top_wicket_takers_wickets"] == 29.0
+    assert trained_match["team_b_top_wicket_takers_wickets"] == 18.0
+
+
 def test_tracker_retrains_after_enough_completed_predictions(monkeypatch, tmp_path) -> None:
     settings = Settings(model_artifact_dir=str(tmp_path / "artifacts" / "models"))
     tracker = PredictionTrackerService(settings)

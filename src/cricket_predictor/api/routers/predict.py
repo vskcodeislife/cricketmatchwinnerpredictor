@@ -8,7 +8,8 @@ from cricket_predictor.api.schemas import (
     PlayerPredictionRequest,
 )
 from cricket_predictor.config.settings import get_settings
-from cricket_predictor.providers.cricinfo_standings import resolve_team_name, venue_advantage
+from cricket_predictor.providers.cricinfo_standings import resolve_team_name
+from cricket_predictor.services.match_context_service import get_match_context_service
 from cricket_predictor.services.prediction_service import PredictionService, get_prediction_service
 from cricket_predictor.services.standings_service import StandingsService, get_standings_service
 
@@ -35,9 +36,7 @@ def predict_match_auto(
     team_b = resolve_team_name(payload.team_b)
     toss_winner = resolve_team_name(payload.toss_winner)
 
-    va = venue_advantage(payload.venue, team_a, team_b)
-
-    full_payload = MatchPredictionRequest(
+    full_payload = get_match_context_service().build_request(
         team_a=team_a,
         team_b=team_b,
         venue=payload.venue,
@@ -45,18 +44,14 @@ def predict_match_auto(
         pitch_type=payload.pitch_type,
         toss_winner=toss_winner,
         toss_decision=payload.toss_decision,
-        team_a_recent_form=standings.recent_form(team_a),
-        team_b_recent_form=standings.recent_form(team_b),
-        team_a_batting_strength=standings.batting_strength(team_a),
-        team_b_batting_strength=standings.batting_strength(team_b),
-        team_a_bowling_strength=standings.bowling_strength(team_a),
-        team_b_bowling_strength=standings.bowling_strength(team_b),
-        head_to_head_win_pct_team_a=payload.head_to_head_win_pct_team_a,
-        venue_advantage_team_a=va,
         dew_probability=payload.dew_probability,
         pitch_batting_bias=payload.pitch_batting_bias,
         night_match=payload.night_match,
     )
+    if "head_to_head_win_pct_team_a" in payload.model_fields_set:
+        full_payload = full_payload.model_copy(
+            update={"head_to_head_win_pct_team_a": payload.head_to_head_win_pct_team_a}
+        )
 
     result = pred_service.predict_match(full_payload)
 
@@ -78,6 +73,13 @@ def predict_match_auto(
             "nrr": tb_standing.nrr if tb_standing else "N/A",
             "recent_form_pct": tb_standing.recent_form_pct if tb_standing else 0.5,
         },
+    }
+    result["match_signals"] = {
+        "head_to_head_last_7_team_a_pct": full_payload.head_to_head_win_pct_team_a,
+        "team_a_top_run_getters_runs": full_payload.team_a_top_run_getters_runs,
+        "team_b_top_run_getters_runs": full_payload.team_b_top_run_getters_runs,
+        "team_a_top_wicket_takers_wickets": full_payload.team_a_top_wicket_takers_wickets,
+        "team_b_top_wicket_takers_wickets": full_payload.team_b_top_wicket_takers_wickets,
     }
     result["standings_fetched_at"] = standings.fetched_at
     return result
