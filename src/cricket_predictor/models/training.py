@@ -8,6 +8,7 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.metrics import accuracy_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -145,6 +146,13 @@ def train_all(matches: pd.DataFrame, players: pd.DataFrame) -> TrainedArtifacts:
         match_model=train_match_model(matches),
         player_model=train_player_model(players),
     )
+
+
+def score_match_model(model: Pipeline, matches: pd.DataFrame) -> float:
+    """Return accuracy of the match model on the given dataset (0.0\u20131.0)."""
+    X = build_match_feature_frame(matches)
+    y = matches["team_a_win"]
+    return float(accuracy_score(y, model.predict(X)))
 
 
 def save_artifacts(artifacts: TrainedArtifacts, output_dir: str | Path) -> None:

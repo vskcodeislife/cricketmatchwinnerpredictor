@@ -559,3 +559,52 @@ def test_tracker_refreshes_stale_ai_analysis_using_verified_current_squads(monke
         "Abhishek Sharma",
         "Heinrich Klaasen",
     ]
+
+
+def test_retrain_validation_gate_rejects_degraded_model(monkeypatch, tmp_path) -> None:
+    """The validation gate should block a retrain when the new model is worse."""
+    settings = Settings(
+        model_artifact_dir=str(tmp_path / "artifacts" / "models"),
+        synthetic_data_dir=str(tmp_path / "data" / "synthetic"),
+        cricsheet_data_dir=str(tmp_path / "data" / "cricsheet"),
+    )
+    service = DataUpdateService(settings)
+
+    # Patch _validate_retrain to simulate rejection (new model worse by > 5%)
+    monkeypatch.setattr(service, "_validate_retrain", lambda df: False)
+    monkeypatch.setattr(service, "_get_local_json_dirs", lambda urls: [tmp_path / "data" / "cricsheet"])
+    monkeypatch.setattr(service._loader, "parse_matches", lambda _: pd.DataFrame(
+        [_feature_snapshot(match_date="2026-04-01", team_a_win=1)]
+    ))
+    monkeypatch.setattr(service._loader, "parse_player_stats", lambda _: _player_training_frame())
+
+    train_called = {"count": 0}
+
+    def fake_train_all(matches: pd.DataFrame, players: pd.DataFrame) -> SimpleNamespace:
+        train_called["count"] += 1
+        return SimpleNamespace(match_model="match", player_model="player")
+
+    monkeypatch.setattr("cricket_predictor.services.data_update_service.train_all", fake_train_all)
+    monkeypatch.setattr("cricket_predictor.services.data_update_service.save_artifacts", lambda *a: None)
+
+    assert service.retrain_from_local_data() is False
+    assert train_called["count"] == 0, "train_all should not be called when validation rejects"
+
+
+def test_retrain_backup_creates_prev_files(monkeypatch, tmp_path) -> None:
+    """_backup_artifacts should copy current model files to *.prev."""
+    model_dir = tmp_path / "artifacts" / "models"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "match_model.joblib").write_text("old-match-model")
+    (model_dir / "player_model.joblib").write_text("old-player-model")
+
+    settings = Settings(
+        model_artifact_dir=str(model_dir),
+        synthetic_data_dir=str(tmp_path / "data" / "synthetic"),
+        cricsheet_data_dir=str(tmp_path / "data" / "cricsheet"),
+    )
+    service = DataUpdateService(settings)
+    service._backup_artifacts()
+
+    assert (model_dir / "match_model.joblib.prev").read_text() == "old-match-model"
+    assert (model_dir / "player_model.joblib.prev").read_text() == "old-player-model"

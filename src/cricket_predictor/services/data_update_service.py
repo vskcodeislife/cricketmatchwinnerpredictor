@@ -8,6 +8,7 @@ augments match training with completed prediction-history examples.
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,13 @@ import pandas as pd
 from cricket_predictor.config.settings import Settings
 from cricket_predictor.data.cricsheet_loader import CricsheetLoader
 from cricket_predictor.data.predictions_db import PredictionsDB, default_predictions_db_path
-from cricket_predictor.models.training import save_artifacts, train_all
+from cricket_predictor.models.training import (
+    load_match_model,
+    save_artifacts,
+    score_match_model,
+    train_all,
+    train_match_model,
+)
 from cricket_predictor.providers.cricinfo_standings import resolve_team_name
 from cricket_predictor.providers.ipl_csv_provider import IplCsvDataProvider, TeamLeaderStats
 
@@ -197,6 +204,75 @@ class DataUpdateService:
         )
         frame.loc[needs_fill, value_column] = fallback_values[needs_fill]
 
+    # -- Validation gate --------------------------------------------------
+
+    _VALIDATION_TOLERANCE = 0.05  # Accept if new accuracy >= old - 5%
+    _MIN_VALIDATION_SAMPLES = 15
+
+    def _validate_retrain(self, matches_df: pd.DataFrame) -> bool:
+        """Return True if a model trained on this data passes quality checks.
+
+        Uses a chronological train/validation split to compare the candidate
+        model against the currently deployed model.  Skips validation when the
+        dataset is too small for a meaningful held-out set.
+        """
+        min_val = self._MIN_VALIDATION_SAMPLES
+        if len(matches_df) < min_val * 2:
+            log.info("Dataset too small (%d rows) for validation \u2014 accepting retrain.", len(matches_df))
+            return True
+
+        val_size = max(int(len(matches_df) * 0.2), min_val)
+        sorted_df = matches_df.sort_values("match_date") if "match_date" in matches_df.columns else matches_df
+        val_df = sorted_df.tail(val_size)
+        train_df = sorted_df.head(len(sorted_df) - val_size)
+
+        try:
+            candidate = train_match_model(train_df)
+            new_score = score_match_model(candidate, val_df)
+        except Exception as exc:
+            log.warning("Validation training failed (%s) \u2014 accepting retrain.", exc)
+            return True
+
+        old_score = self._score_existing_model(val_df)
+        if old_score is None:
+            log.info("No existing model to compare \u2014 accepting retrain (new=%.1f%%).", new_score * 100)
+            return True
+
+        if new_score < old_score - self._VALIDATION_TOLERANCE:
+            log.warning(
+                "Retrain rejected: new model (%.1f%%) worse than current (%.1f%%) on %d held-out matches.",
+                new_score * 100, old_score * 100, len(val_df),
+            )
+            return False
+
+        log.info(
+            "Retrain validated: new=%.1f%% vs current=%.1f%% on %d held-out matches.",
+            new_score * 100, old_score * 100, len(val_df),
+        )
+        return True
+
+    def _score_existing_model(self, val_df: pd.DataFrame) -> float | None:
+        """Score the currently deployed match model on validation data."""
+        model_path = Path(self._settings.model_artifact_dir) / "match_model.joblib"
+        if not model_path.exists():
+            return None
+        try:
+            existing = load_match_model(self._settings.model_artifact_dir)
+            return score_match_model(existing, val_df)
+        except Exception:
+            return None
+
+    def _backup_artifacts(self) -> None:
+        """Copy current model files to *.prev before overwriting."""
+        model_dir = Path(self._settings.model_artifact_dir)
+        for name in ("match_model.joblib", "player_model.joblib"):
+            src = model_dir / name
+            if src.exists():
+                try:
+                    shutil.copy2(src, model_dir / f"{name}.prev")
+                except Exception as exc:
+                    log.warning("Failed to backup %s: %s", src, exc)
+
     def _retrain_from_dirs(self, json_dirs: list[Path], source_label: str) -> bool:
         if not json_dirs:
             log.warning("No directories available for retrain from %s.", source_label)
@@ -214,6 +290,9 @@ class DataUpdateService:
             )
             return False
 
+        if not self._validate_retrain(matches_df):
+            return False
+
         log.info(
             "Training on %d matches (%d completed prediction examples) and %d players from %s.",
             len(matches_df),
@@ -221,6 +300,7 @@ class DataUpdateService:
             len(players_df),
             source_label,
         )
+        self._backup_artifacts()
         artifacts = train_all(matches_df, players_df)
         save_artifacts(artifacts, self._settings.model_artifact_dir)
         log.info("Models retrained and saved to %s.", self._settings.model_artifact_dir)

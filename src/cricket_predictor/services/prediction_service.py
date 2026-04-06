@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import logging
 from functools import lru_cache
 from pathlib import Path
@@ -59,7 +58,6 @@ class PredictionService:
         forward_probability = self._predict_team_a_probability(payload)
         reverse_probability = self._predict_team_a_probability(self._swap_match_payload(payload))
         team_a_probability = (forward_probability + (1.0 - reverse_probability)) / 2.0
-        team_a_probability = self._apply_match_signal_adjustment(team_a_probability, payload)
         team_a_probability = min(max(team_a_probability, 0.01), 0.99)
         team_b_probability = 1.0 - team_a_probability
         predicted_winner = payload.team_a if team_a_probability >= 0.5 else payload.team_b
@@ -182,25 +180,6 @@ class PredictionService:
                 "team_b_top_wicket_takers_wickets": payload.team_a_top_wicket_takers_wickets,
             }
         )
-
-    def _apply_match_signal_adjustment(
-        self,
-        team_a_probability: float,
-        payload: MatchPredictionRequest,
-    ) -> float:
-        clamped_probability = min(max(team_a_probability, 0.01), 0.99)
-        logit = math.log(clamped_probability / (1.0 - clamped_probability))
-
-        run_gap = payload.team_a_top_run_getters_runs - payload.team_b_top_run_getters_runs
-        wicket_gap = payload.team_a_top_wicket_takers_wickets - payload.team_b_top_wicket_takers_wickets
-        signal_shift = (
-            0.75 * (payload.team_a_recent_form - payload.team_b_recent_form)
-            + 0.55 * (payload.head_to_head_win_pct_team_a - 0.5)
-            + 0.0018 * run_gap
-            + 0.045 * wicket_gap
-        )
-        signal_shift = max(min(signal_shift, 1.1), -1.1)
-        return 1.0 / (1.0 + math.exp(-(logit + signal_shift)))
 
     def reload_models(self) -> None:
         """Hot-reload model artifacts from disk after a retrain."""
