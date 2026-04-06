@@ -7,6 +7,7 @@ chat/completions endpoint.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 import ssl
 
 import httpx
@@ -45,6 +46,12 @@ def _build_prompt(match_context: dict) -> str:
     win_pct = match_context.get("win_probability", 50)
     injuries = match_context.get("injuries", "None reported")
     overrides = match_context.get("overrides", "None")
+    verified_team_a_squad = _format_player_names(match_context.get("verified_team_a_squad", []))
+    verified_team_b_squad = _format_player_names(match_context.get("verified_team_b_squad", []))
+    team_a_batting_leaders = _format_player_names(match_context.get("verified_team_a_batting_leaders", []))
+    team_b_batting_leaders = _format_player_names(match_context.get("verified_team_b_batting_leaders", []))
+    team_a_bowling_leaders = _format_player_names(match_context.get("verified_team_a_bowling_leaders", []))
+    team_b_bowling_leaders = _format_player_names(match_context.get("verified_team_b_bowling_leaders", []))
 
     home_note = ""
     if venue_adv > 0:
@@ -64,6 +71,14 @@ def _build_prompt(match_context: dict) -> str:
 **Injuries/Unavailability:** {injuries}
 **Additional Context:** {overrides}
 
+**Verified Current Squad And Leader Data:**
+- {team_a} current squad: {verified_team_a_squad}
+- {team_b} current squad: {verified_team_b_squad}
+- {team_a} top current-season batters: {team_a_batting_leaders}
+- {team_b} top current-season batters: {team_b_batting_leaders}
+- {team_a} top current-season wicket-takers: {team_a_bowling_leaders}
+- {team_b} top current-season wicket-takers: {team_b_bowling_leaders}
+
 **ML Model Prediction:** {predicted_winner} ({win_pct:.1f}% probability)
 
 Write a short pre-match analysis (4-5 bullet points) covering:
@@ -73,13 +88,28 @@ Write a short pre-match analysis (4-5 bullet points) covering:
 4. Recent form momentum
 5. Your verdict — agree or nuance the ML prediction
 
+Rules:
+- Mention player names only if they appear in the verified squad or verified leader lists above.
+- If the verified lists are empty for a team, keep the analysis team-level and do not guess player names.
+- Do not mention outdated transfers, former IPL players, or unverified squad associations.
+
 Keep each bullet to 1-2 sentences. Use cricket terminology. Be specific to these teams. Do NOT use markdown headers. Use plain bullet points with • character."""
 
 
 _SYSTEM_PROMPT = (
     "You are an expert IPL cricket analyst. Provide concise, insightful "
-    "pre-match analysis for IPL 2026 matches. Be specific and use cricket terminology."
+    "pre-match analysis for IPL 2026 matches. Be specific, use cricket terminology, "
+    "and never mention a player unless that player appears in the verified squad or leader lists provided."
 )
+
+
+def _format_player_names(value: object) -> str:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return "No verified player list available"
+    players = [str(player).strip() for player in value if str(player).strip()]
+    if not players:
+        return "No verified player list available"
+    return ", ".join(players)
 
 
 def generate_match_analysis(match_context: dict) -> str | None:
@@ -108,7 +138,7 @@ def generate_match_analysis(match_context: dict) -> str | None:
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.7,
+        "temperature": 0.3,
         "max_tokens": 512,
     }
 

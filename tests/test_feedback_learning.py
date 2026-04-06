@@ -444,3 +444,118 @@ def test_rebuild_upcoming_predictions_replaces_stale_saved_prediction(monkeypatc
         assert saved is not None
         assert saved["predicted_winner"] == "Chennai Super Kings"
         assert saved["explanation"] == "refreshed"
+
+
+def test_tracker_refreshes_stale_ai_analysis_using_verified_current_squads(monkeypatch, tmp_path) -> None:
+    dataset_dir = tmp_path / "ipl_csv"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {"player_name": "Shreyas Iyer", "runs": 320},
+            {"player_name": "Prabhsimran Singh", "runs": 240},
+            {"player_name": "Priyansh Arya", "runs": 210},
+            {"player_name": "Travis Head", "runs": 315},
+            {"player_name": "Abhishek Sharma", "runs": 255},
+            {"player_name": "Heinrich Klaasen", "runs": 225},
+        ]
+    ).to_csv(dataset_dir / "orange_cap.csv", index=False)
+    pd.DataFrame(
+        [
+            {"player_name": "Arshdeep Singh", "wickets": 13},
+            {"player_name": "Yuzvendra Chahal", "wickets": 10},
+            {"player_name": "Marco Jansen", "wickets": 8},
+            {"player_name": "Pat Cummins", "wickets": 12},
+            {"player_name": "Harshal Patel", "wickets": 11},
+            {"player_name": "Mohammed Shami", "wickets": 9},
+        ]
+    ).to_csv(dataset_dir / "purple_cap.csv", index=False)
+    pd.DataFrame(
+        [
+            {"team": "Punjab Kings", "player_name": "Shreyas Iyer"},
+            {"team": "Punjab Kings", "player_name": "Prabhsimran Singh"},
+            {"team": "Punjab Kings", "player_name": "Priyansh Arya"},
+            {"team": "Punjab Kings", "player_name": "Arshdeep Singh"},
+            {"team": "Punjab Kings", "player_name": "Yuzvendra Chahal"},
+            {"team": "Punjab Kings", "player_name": "Marco Jansen"},
+            {"team": "Sunrisers Hyderabad", "player_name": "Travis Head"},
+            {"team": "Sunrisers Hyderabad", "player_name": "Abhishek Sharma"},
+            {"team": "Sunrisers Hyderabad", "player_name": "Heinrich Klaasen"},
+            {"team": "Sunrisers Hyderabad", "player_name": "Pat Cummins"},
+            {"team": "Sunrisers Hyderabad", "player_name": "Harshal Patel"},
+            {"team": "Sunrisers Hyderabad", "player_name": "Mohammed Shami"},
+        ]
+    ).to_csv(dataset_dir / "squads.csv", index=False)
+
+    settings = Settings(
+        model_artifact_dir=str(tmp_path / "artifacts" / "models"),
+        ipl_csv_data_dir=str(dataset_dir),
+    )
+    tracker = PredictionTrackerService(settings)
+    match = {
+        "match_id": "ai-stale-1",
+        "team_a": "Punjab Kings",
+        "team_b": "Sunrisers Hyderabad",
+        "venue": "Eden Gardens",
+        "match_date": "2099-04-05",
+    }
+    tracker._db.save_prediction(
+        match_id=match["match_id"],
+        team_a=match["team_a"],
+        team_b=match["team_b"],
+        venue=match["venue"],
+        match_date=match["match_date"],
+        predicted_winner=match["team_a"],
+        team_a_probability=0.54,
+        team_b_probability=0.46,
+        confidence_score=0.08,
+        explanation="test",
+        ai_analysis="• Eden Gardens favors aggressive strokeplay, and the short boundaries may amplify the impact of Punjab's power-hitters like Livingstone and Bairstow.",
+        feature_snapshot=_feature_snapshot(team_a=match["team_a"], team_b=match["team_b"]),
+    )
+
+    standing = SimpleNamespace(played=5)
+    standings = SimpleNamespace(
+        get_team=lambda _: standing,
+        recent_form=lambda team: 0.72 if team == match["team_a"] else 0.61,
+        batting_strength=lambda team: 78.0 if team == match["team_a"] else 76.0,
+        bowling_strength=lambda team: 69.0 if team == match["team_a"] else 74.0,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_generate_match_analysis(context: dict) -> str:
+        captured.update(context)
+        return "• Verified squads point to current PBKS and SRH players only."
+
+    monkeypatch.setattr(
+        "cricket_predictor.services.prediction_tracker.get_standings_service",
+        lambda: standings,
+    )
+    monkeypatch.setattr(
+        tracker._schedule,
+        "get_match_by_id",
+        lambda match_id: match if match_id == match["match_id"] else None,
+    )
+    monkeypatch.setattr(
+        "cricket_predictor.providers.gemini_provider.generate_match_analysis",
+        fake_generate_match_analysis,
+    )
+
+    analysis = tracker.ensure_prediction_analysis(match["match_id"])
+    saved = tracker._db.get_prediction(match["match_id"])
+
+    assert analysis == "• Verified squads point to current PBKS and SRH players only."
+    assert saved is not None
+    assert saved["ai_analysis"] == analysis
+    assert captured["verified_team_a_squad"] == [
+        "Shreyas Iyer",
+        "Prabhsimran Singh",
+        "Priyansh Arya",
+        "Arshdeep Singh",
+        "Yuzvendra Chahal",
+        "Marco Jansen",
+    ]
+    assert captured["verified_team_b_batting_leaders"] == [
+        "Travis Head",
+        "Abhishek Sharma",
+        "Heinrich Klaasen",
+    ]

@@ -89,6 +89,12 @@ class TeamLeaderStats:
     top_wicket_takers_wickets: float = 0.0
 
 
+@dataclass(frozen=True)
+class TeamLeaderNames:
+    top_batters: tuple[str, ...] = ()
+    top_bowlers: tuple[str, ...] = ()
+
+
 def _normalise_column_name(column: object) -> str:
     return "".join(ch if ch.isalnum() else "_" for ch in str(column).strip().lower()).strip("_")
 
@@ -223,6 +229,28 @@ class IplCsvDataProvider(LiveDataProvider):
             return {}
         return self._build_team_metrics(matches)
 
+    def team_squad_lookup(self) -> dict[str, list[str]]:
+        squads = self._load_csv("squads.csv")
+        if squads.empty:
+            return {}
+
+        team_col = _first_existing(squads, _TEAM_COLUMNS)
+        player_col = _first_existing(squads, _PLAYER_COLUMNS)
+        if not (team_col and player_col):
+            return {}
+
+        squads_by_team: dict[str, list[str]] = defaultdict(list)
+        seen: dict[str, set[str]] = defaultdict(set)
+        for _, row in squads.iterrows():
+            team = resolve_team_name(_clean_text(row.get(team_col)))
+            player_name = _clean_text(row.get(player_col))
+            player_key = _player_key(player_name)
+            if not team or not player_name or player_key in seen[team]:
+                continue
+            seen[team].add(player_key)
+            squads_by_team[team].append(player_name)
+        return dict(squads_by_team)
+
     def team_leader_stats_lookup(self) -> dict[str, TeamLeaderStats]:
         cap_leaders = self._build_team_leader_stats_from_caps(
             orange_cap=self._load_csv("orange_cap.csv"),
@@ -231,6 +259,17 @@ class IplCsvDataProvider(LiveDataProvider):
         )
         delivery_leaders = self._build_team_leader_stats(self._load_csv("deliveries.csv"))
         return self._merge_team_leader_stats(cap_leaders, delivery_leaders)
+
+    def team_leader_names_lookup(self) -> dict[str, TeamLeaderNames]:
+        squads = self._load_csv("squads.csv")
+        if squads.empty:
+            return {}
+        player_teams = self._build_player_team_lookup(squads)
+        return self._build_team_leader_names_from_caps(
+            orange_cap=self._load_csv("orange_cap.csv"),
+            purple_cap=self._load_csv("purple_cap.csv"),
+            player_teams=player_teams,
+        )
 
     def head_to_head_pct(self, team_a: str, team_b: str, limit: int = 7) -> float:
         matches = self._load_csv("matches.csv")
@@ -529,6 +568,81 @@ class IplCsvDataProvider(LiveDataProvider):
                     )
 
         return leaders
+
+    def _build_team_leader_names_from_caps(
+        self,
+        *,
+        orange_cap: pd.DataFrame,
+        purple_cap: pd.DataFrame,
+        player_teams: dict[str, str],
+    ) -> dict[str, TeamLeaderNames]:
+        batter_names: dict[str, list[str]] = defaultdict(list)
+        bowler_names: dict[str, list[str]] = defaultdict(list)
+
+        if not orange_cap.empty:
+            team_col = _first_existing(orange_cap, _TEAM_COLUMNS + _BATTING_TEAM_COLUMNS)
+            player_col = _first_existing(orange_cap, _PLAYER_COLUMNS)
+            runs_col = _first_existing(orange_cap, _RUNS_COLUMNS)
+            if player_col and runs_col:
+                top_batters = self._build_ranked_cap_entries(
+                    frame=orange_cap,
+                    team_col=team_col,
+                    player_col=player_col,
+                    value_col=runs_col,
+                    player_teams=player_teams,
+                )
+                for team, values in top_batters.items():
+                    batter_names[team] = [name for name, _ in values[:3]]
+
+        if not purple_cap.empty:
+            team_col = _first_existing(purple_cap, _TEAM_COLUMNS + _BOWLING_TEAM_COLUMNS)
+            player_col = _first_existing(purple_cap, _PLAYER_COLUMNS)
+            wickets_col = _first_existing(purple_cap, _WICKETS_COLUMNS)
+            if player_col and wickets_col:
+                top_bowlers = self._build_ranked_cap_entries(
+                    frame=purple_cap,
+                    team_col=team_col,
+                    player_col=player_col,
+                    value_col=wickets_col,
+                    player_teams=player_teams,
+                )
+                for team, values in top_bowlers.items():
+                    bowler_names[team] = [name for name, _ in values[:3]]
+
+        result: dict[str, TeamLeaderNames] = {}
+        for team in set(batter_names) | set(bowler_names):
+            result[team] = TeamLeaderNames(
+                top_batters=tuple(batter_names.get(team, [])),
+                top_bowlers=tuple(bowler_names.get(team, [])),
+            )
+        return result
+
+    def _build_ranked_cap_entries(
+        self,
+        *,
+        frame: pd.DataFrame,
+        team_col: str | None,
+        player_col: str,
+        value_col: str,
+        player_teams: dict[str, str],
+    ) -> dict[str, list[tuple[str, float]]]:
+        ranked: dict[str, dict[str, tuple[str, float]]] = defaultdict(dict)
+        for _, row in frame.iterrows():
+            team = self._resolve_team_from_caps_row(row, team_col, player_col, player_teams)
+            player_name = _clean_text(row.get(player_col))
+            player_key = _player_key(player_name)
+            value = _coerce_float(row.get(value_col))
+            if not team or not player_name or not player_key or value is None:
+                continue
+
+            current = ranked[team].get(player_key)
+            if current is None or value > current[1]:
+                ranked[team][player_key] = (player_name, value)
+
+        return {
+            team: sorted(entries.values(), key=lambda item: item[1], reverse=True)
+            for team, entries in ranked.items()
+        }
 
     def _build_player_team_lookup(self, squads: pd.DataFrame) -> dict[str, str]:
         if squads.empty:

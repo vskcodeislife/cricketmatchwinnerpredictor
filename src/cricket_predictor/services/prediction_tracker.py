@@ -12,6 +12,7 @@ Responsibilities
 from __future__ import annotations
 
 import logging
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -35,6 +36,10 @@ from cricket_predictor.services.standings_service import get_standings_service
 _MIN_GAMES_FOR_NRR = 3
 
 log = logging.getLogger(__name__)
+
+_PLAYER_MENTION_PATTERN = re.compile(
+    r"\b(?:like|such as|including|featuring|with)\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*(?:\s*(?:,|and)\s*[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)*)"
+)
 
 # Retrain when this many consecutive wrong predictions since last retrain
 RETRAIN_WRONG_THRESHOLD = 5
@@ -221,17 +226,20 @@ class PredictionTrackerService:
         if not saved:
             return None
 
-        existing = (saved.get("ai_analysis") or "").strip()
-        if existing:
-            return existing
-
         match = self._schedule.get_match_by_id(match_id)
         if match is None:
-            return None
+            existing = (saved.get("ai_analysis") or "").strip()
+            return existing or None
+
+        existing = (saved.get("ai_analysis") or "").strip()
 
         standings = get_standings_service()
         team_a = match["team_a"]
         team_b = match["team_b"]
+        verified_context = self._build_verified_player_context(team_a, team_b)
+        if existing and not self._analysis_needs_refresh(existing, team_a, team_b, match.get("venue", ""), verified_context):
+            return existing
+
         ta_standing = standings.get_team(team_a)
         tb_standing = standings.get_team(team_b)
         ta_games = ta_standing.played if ta_standing else 0
@@ -259,7 +267,7 @@ class PredictionTrackerService:
         analysis = self._generate_ai_analysis(
             match, team_a, team_b, team_a_form, team_b_form,
             team_a_bat, team_b_bat, team_a_bowl, team_b_bowl,
-            venue_adv, winner, win_pct, active_overrides,
+            venue_adv, winner, win_pct, active_overrides, verified_context,
         )
         if analysis:
             self._db.update_prediction_analysis(match_id, analysis)
@@ -290,6 +298,7 @@ class PredictionTrackerService:
         predicted_winner: str,
         win_pct: float,
         active_overrides: list[dict],
+        verified_context: dict[str, list[str]],
     ) -> str | None:
         """Call the configured LLM to generate a pre-match analysis."""
         from cricket_predictor.providers.gemini_provider import generate_match_analysis
@@ -322,12 +331,91 @@ class PredictionTrackerService:
             "injuries": "; ".join(injury_notes) if injury_notes else "None reported",
             "overrides": "; ".join(other_notes) if other_notes else "None",
         }
+        context.update(verified_context)
 
         try:
             return generate_match_analysis(context)
         except Exception as exc:
             log.warning("AI analysis failed for %s: %s", match.get("match_id"), exc)
             return None
+
+    def _build_verified_player_context(self, team_a: str, team_b: str) -> dict[str, list[str]]:
+        empty = {
+            "verified_team_a_squad": [],
+            "verified_team_b_squad": [],
+            "verified_team_a_batting_leaders": [],
+            "verified_team_b_batting_leaders": [],
+            "verified_team_a_bowling_leaders": [],
+            "verified_team_b_bowling_leaders": [],
+        }
+        if not self._settings.ipl_csv_data_dir:
+            return empty
+
+        provider = IplCsvDataProvider(self._settings.ipl_csv_data_dir)
+        squad_lookup = provider.team_squad_lookup()
+        leader_lookup = provider.team_leader_names_lookup()
+        team_a_leaders = leader_lookup.get(team_a)
+        team_b_leaders = leader_lookup.get(team_b)
+        return {
+            "verified_team_a_squad": squad_lookup.get(team_a, []),
+            "verified_team_b_squad": squad_lookup.get(team_b, []),
+            "verified_team_a_batting_leaders": list(team_a_leaders.top_batters) if team_a_leaders else [],
+            "verified_team_b_batting_leaders": list(team_b_leaders.top_batters) if team_b_leaders else [],
+            "verified_team_a_bowling_leaders": list(team_a_leaders.top_bowlers) if team_a_leaders else [],
+            "verified_team_b_bowling_leaders": list(team_b_leaders.top_bowlers) if team_b_leaders else [],
+        }
+
+    def _analysis_needs_refresh(
+        self,
+        existing_analysis: str,
+        team_a: str,
+        team_b: str,
+        venue: str,
+        verified_context: dict[str, list[str]],
+    ) -> bool:
+        allowed_full_names = {
+            self._normalise_text(name)
+            for key, names in verified_context.items()
+            if key.startswith("verified_")
+            for name in names
+            if name
+        }
+        if not allowed_full_names:
+            return False
+
+        allowed_tokens = {
+            token
+            for name in allowed_full_names
+            for token in name.split()
+            if len(token) > 2
+        }
+        allowed_full_names.update(
+            self._normalise_text(value)
+            for value in (team_a, team_b, venue)
+            if value
+        )
+        allowed_tokens.update(
+            self._normalise_text(token)
+            for value in (team_a, team_b, venue)
+            for token in str(value).split()
+            if len(token) > 2
+        )
+
+        for match in _PLAYER_MENTION_PATTERN.finditer(existing_analysis):
+            fragment = match.group(1)
+            for part in re.split(r",|\band\b", fragment):
+                candidate = self._normalise_text(part)
+                if not candidate:
+                    continue
+                if candidate in allowed_full_names:
+                    continue
+                if all(token in allowed_tokens for token in candidate.split()):
+                    continue
+                return True
+        return False
+
+    def _normalise_text(self, value: str) -> str:
+        return " ".join(re.findall(r"[a-z0-9]+", str(value).lower()))
 
     # ------------------------------------------------------------------
     # Override management (injuries, pitch notes, etc.)
