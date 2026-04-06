@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     live_provider: str = "mock"
     live_refresh_seconds: int = Field(default=60, ge=15)
     live_provider_base_url: str | None = None
+    ipl_csv_data_dir: str | None = None
+    enable_ipl_csv_refresh: bool = False
+    ipl_csv_refresh_hours: int = Field(default=24, ge=1)
+    ipl_csv_refresh_command: str | None = None
     enable_live_updates: bool = False
 
     # --- Prediction tracker (upcoming matches + self-learning) ---

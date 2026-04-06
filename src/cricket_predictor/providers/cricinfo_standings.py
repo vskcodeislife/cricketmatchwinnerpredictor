@@ -20,6 +20,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from html.parser import HTMLParser
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -138,6 +139,136 @@ class TeamStanding:
     fetched_at: str = field(default_factory=lambda: datetime.utcnow().isoformat(timespec="seconds"))
 
 
+@dataclass(frozen=True)
+class RecentMatchResult:
+    match_date: str
+    team_a: str
+    team_b: str
+    winner: str
+
+
+def build_recent_results_lookup(
+    results: list[RecentMatchResult],
+) -> dict[tuple[str, str, str], str]:
+    lookup: dict[tuple[str, str, str], str] = {}
+    for result in results:
+        team_a = resolve_team_name(result.team_a)
+        team_b = resolve_team_name(result.team_b)
+        winner = resolve_team_name(result.winner)
+        lookup[(team_a, team_b, result.match_date)] = winner
+        lookup[(team_b, team_a, result.match_date)] = winner
+    return lookup
+
+
+class _RecentResultsParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.results: list[RecentMatchResult] = []
+        self._current: dict[str, str] | None = None
+        self._capture: tuple[str, str | None] | None = None
+        self._active_team_side: str | None = None
+        self._match_div_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attrs_map = dict(attrs)
+        classes = set((attrs_map.get("class") or "").split())
+
+        if tag == "div":
+            if self._current is None:
+                if "match-item" in classes:
+                    self._current = {
+                        "match_date": "",
+                        "team_a": "",
+                        "team_b": "",
+                        "winner_side": "",
+                    }
+                    self._match_div_depth = 1
+                    self._active_team_side = None
+                    self._capture = None
+                return
+
+            self._match_div_depth += 1
+            if "team-a" in classes:
+                self._active_team_side = "team_a"
+                if "team-won" in classes:
+                    self._current["winner_side"] = "team_a"
+            elif "team-b" in classes:
+                self._active_team_side = "team_b"
+                if "team-won" in classes:
+                    self._current["winner_side"] = "team_b"
+            return
+
+        if self._current is None or tag != "p":
+            return
+
+        if {"match-meta", "match-date"}.issubset(classes):
+            self._capture = ("match_date", None)
+        elif {"name", "full-name"}.issubset(classes) and self._active_team_side:
+            self._capture = ("team_name", self._active_team_side)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._current is None:
+            return
+
+        if tag == "p":
+            self._capture = None
+            return
+
+        if tag == "div":
+            self._match_div_depth -= 1
+            if self._match_div_depth == 0:
+                self._flush_current_match()
+
+    def handle_data(self, data: str) -> None:
+        if self._current is None or self._capture is None:
+            return
+
+        text = " ".join(data.split())
+        if not text:
+            return
+
+        field_name, team_side = self._capture
+        if field_name == "match_date":
+            existing = self._current["match_date"]
+            self._current["match_date"] = f"{existing} {text}".strip()
+            return
+
+        if team_side is None:
+            return
+
+        existing = self._current[team_side]
+        self._current[team_side] = f"{existing} {text}".strip()
+
+    def _flush_current_match(self) -> None:
+        current = self._current or {}
+        self._current = None
+        self._capture = None
+        self._active_team_side = None
+        self._match_div_depth = 0
+
+        match_date = current.get("match_date", "").strip()
+        team_a = current.get("team_a", "").strip()
+        team_b = current.get("team_b", "").strip()
+        winner_side = current.get("winner_side", "")
+        if not (match_date and team_a and team_b and winner_side):
+            return
+
+        try:
+            iso_date = datetime.strptime(match_date, "%b %d %Y").date().isoformat()
+        except ValueError:
+            return
+
+        winner = team_a if winner_side == "team_a" else team_b
+        self.results.append(
+            RecentMatchResult(
+                match_date=iso_date,
+                team_a=team_a,
+                team_b=team_b,
+                winner=winner,
+            )
+        )
+
+
 class CricinfoStandingsProvider:
     """Fetches IPL standings from the Delhi Capitals points-table page.
 
@@ -155,6 +286,18 @@ class CricinfoStandingsProvider:
     # ------------------------------------------------------------------
 
     def fetch(self) -> list[TeamStanding]:
+        standings, _ = self.fetch_snapshot()
+        return standings
+
+    def fetch_recent_results(self) -> list[RecentMatchResult]:
+        html = self._fetch_html()
+        return self._parse_recent_results(html)
+
+    def fetch_snapshot(self) -> tuple[list[TeamStanding], list[RecentMatchResult]]:
+        html = self._fetch_html()
+        return self._parse(html), self._parse_recent_results(html)
+
+    def _fetch_html(self) -> str:
         try:
             import truststore
             truststore.inject_into_ssl()
@@ -174,7 +317,7 @@ class CricinfoStandingsProvider:
         }
         resp = httpx.get(self._url, headers=headers, timeout=self._timeout, follow_redirects=True)
         resp.raise_for_status()
-        return self._parse(resp.text)
+        return resp.text
 
     # ------------------------------------------------------------------
     # Parsing
@@ -327,5 +470,22 @@ class CricinfoStandingsProvider:
         standings.sort(key=lambda s: s.position)
         log.info("Parsed %d team standings from %s", len(standings), self._url)
         return standings
+
+    def _parse_recent_results(self, html: str) -> list[RecentMatchResult]:
+        parser = _RecentResultsParser()
+        parser.feed(html)
+
+        deduped: dict[tuple[str, str, str], RecentMatchResult] = {}
+        for result in parser.results:
+            canonical = RecentMatchResult(
+                match_date=result.match_date,
+                team_a=resolve_team_name(result.team_a),
+                team_b=resolve_team_name(result.team_b),
+                winner=resolve_team_name(result.winner),
+            )
+            key = (*sorted((canonical.team_a, canonical.team_b)), canonical.match_date)
+            deduped.setdefault(key, canonical)
+
+        return sorted(deduped.values(), key=lambda result: result.match_date, reverse=True)
 
 

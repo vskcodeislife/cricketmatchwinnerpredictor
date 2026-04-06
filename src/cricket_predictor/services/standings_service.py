@@ -14,6 +14,7 @@ from cricket_predictor.config.settings import Settings, get_settings
 from cricket_predictor.providers.cricinfo_standings import (
     CricinfoStandingsProvider,
     TeamStanding,
+    build_recent_results_lookup,
     resolve_team_name,
 )
 
@@ -24,6 +25,7 @@ class StandingsService:
     def __init__(self, settings: Settings) -> None:
         self._provider = CricinfoStandingsProvider(settings.cricinfo_standings_url)
         self._cache: dict[str, TeamStanding] = {}
+        self._recent_results: dict[tuple[str, str, str], str] = {}
         self._fetched_at: str = ""
 
     # ------------------------------------------------------------------
@@ -32,8 +34,9 @@ class StandingsService:
 
     async def refresh(self) -> dict[str, TeamStanding]:
         """Fetch fresh standings in a thread pool and update the cache."""
-        standings: list[TeamStanding] = await asyncio.to_thread(self._provider.fetch)
+        standings, recent_results = await asyncio.to_thread(self._provider.fetch_snapshot)
         self._cache = {s.team: s for s in standings}
+        self._recent_results = build_recent_results_lookup(recent_results)
         if standings:
             self._fetched_at = standings[0].fetched_at
             log.info("Standings refreshed for %d teams.", len(standings))
@@ -42,6 +45,10 @@ class StandingsService:
     def get(self) -> dict[str, TeamStanding]:
         """Return the in-memory cache (empty dict if never refreshed)."""
         return dict(self._cache)
+
+    def recent_results_lookup(self) -> dict[tuple[str, str, str], str]:
+        """Return completed-match winners extracted from the points table page."""
+        return dict(self._recent_results)
 
     def get_team(self, raw_name: str) -> TeamStanding | None:
         """Look up a team by any name alias. Returns None if not found."""

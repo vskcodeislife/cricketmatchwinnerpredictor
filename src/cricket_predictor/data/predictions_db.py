@@ -12,11 +12,33 @@ model_accuracy
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Generator
+
+
+_FEEDBACK_REQUIRED_COLUMNS = {
+    "venue",
+    "match_format",
+    "pitch_type",
+    "toss_winner",
+    "toss_decision",
+    "team_a_recent_form",
+    "team_b_recent_form",
+    "team_a_batting_strength",
+    "team_b_batting_strength",
+    "team_a_bowling_strength",
+    "team_b_bowling_strength",
+    "head_to_head_win_pct_team_a",
+    "venue_advantage_team_a",
+}
+
+
+def default_predictions_db_path(model_artifact_dir: str | Path) -> Path:
+    return Path(model_artifact_dir).parent.parent / "data" / "predictions.db"
 
 
 _DDL = """
@@ -33,8 +55,10 @@ CREATE TABLE IF NOT EXISTS match_predictions (
     confidence_score    REAL    NOT NULL,
     explanation         TEXT,
     ai_analysis         TEXT,
+    feature_snapshot_json TEXT,
     actual_winner       TEXT,
     is_correct          INTEGER,          -- NULL=pending, 1=correct, 0=wrong
+    resolved_at         TEXT,
     created_at          TEXT    NOT NULL
 );
 
@@ -67,10 +91,14 @@ class PredictionsDB:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_DDL)
-            # Migrate existing DBs that lack ai_analysis column
+            # Migrate existing DBs that lack newer columns.
             cols = {r[1] for r in conn.execute("PRAGMA table_info(match_predictions)").fetchall()}
             if "ai_analysis" not in cols:
                 conn.execute("ALTER TABLE match_predictions ADD COLUMN ai_analysis TEXT")
+            if "feature_snapshot_json" not in cols:
+                conn.execute("ALTER TABLE match_predictions ADD COLUMN feature_snapshot_json TEXT")
+            if "resolved_at" not in cols:
+                conn.execute("ALTER TABLE match_predictions ADD COLUMN resolved_at TEXT")
 
     @contextmanager
     def _connect(self) -> Generator[sqlite3.Connection, None, None]:
@@ -99,20 +127,22 @@ class PredictionsDB:
         confidence_score: float,
         explanation: str = "",
         ai_analysis: str = "",
+        feature_snapshot: dict | None = None,
     ) -> None:
+        feature_snapshot_json = json.dumps(feature_snapshot) if feature_snapshot else None
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT OR IGNORE INTO match_predictions
                     (match_id, team_a, team_b, venue, match_date, predicted_winner,
                      team_a_probability, team_b_probability, confidence_score,
-                     explanation, ai_analysis, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     explanation, ai_analysis, feature_snapshot_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     match_id, team_a, team_b, venue, match_date,
                     predicted_winner, team_a_probability, team_b_probability,
-                    confidence_score, explanation, ai_analysis,
+                    confidence_score, explanation, ai_analysis, feature_snapshot_json,
                     datetime.now(tz=timezone.utc).isoformat(),
                 ),
             )
@@ -129,7 +159,7 @@ class PredictionsDB:
             is_correct = int(row["predicted_winner"] == actual_winner)
             conn.execute(
                 """UPDATE match_predictions
-                   SET actual_winner = ?, is_correct = ?
+                   SET actual_winner = ?, is_correct = ?, resolved_at = datetime('now')
                    WHERE match_id = ?""",
                 (actual_winner, is_correct, match_id),
             )
@@ -201,6 +231,57 @@ class PredictionsDB:
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def get_feedback_training_rows(self) -> list[dict]:
+        """Return completed prediction rows as supervised match-training examples."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT team_a, team_b, match_date, actual_winner, feature_snapshot_json
+                   FROM match_predictions
+                   WHERE actual_winner IS NOT NULL AND feature_snapshot_json IS NOT NULL
+                   ORDER BY match_date ASC, created_at ASC"""
+            ).fetchall()
+
+        feedback_rows: list[dict] = []
+        for row in rows:
+            actual_winner = row["actual_winner"]
+            team_a = row["team_a"]
+            team_b = row["team_b"]
+            if actual_winner not in {team_a, team_b}:
+                continue
+            try:
+                snapshot = json.loads(row["feature_snapshot_json"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(snapshot, dict) or not _FEEDBACK_REQUIRED_COLUMNS.issubset(snapshot):
+                continue
+            feedback_rows.append(
+                {
+                    **snapshot,
+                    "team_a": team_a,
+                    "team_b": team_b,
+                    "match_date": row["match_date"],
+                    "team_a_win": int(actual_winner == team_a),
+                }
+            )
+        return feedback_rows
+
+    def count_resolved_predictions_since(self, resolved_after: str | None) -> int:
+        with self._connect() as conn:
+            if resolved_after:
+                row = conn.execute(
+                    """SELECT COUNT(*) AS count
+                       FROM match_predictions
+                       WHERE resolved_at IS NOT NULL AND resolved_at > ?""",
+                    (resolved_after,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """SELECT COUNT(*) AS count
+                       FROM match_predictions
+                       WHERE resolved_at IS NOT NULL"""
+                ).fetchone()
+        return int(row["count"] if row else 0)
 
     # ------------------------------------------------------------------
     # Match overrides (injury notes, pitch reports, etc.)

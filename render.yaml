@@ -18,6 +18,20 @@ services:
         value: "24"
       - key: CRICKET_PREDICTOR_TRACKER_INTERVAL_SECONDS
         value: "3600"
+      - key: CRICKET_PREDICTOR_LIVE_PROVIDER
+        value: ipl_csv
+      - key: CRICKET_PREDICTOR_ENABLE_LIVE_UPDATES
+        value: "true"
+      - key: CRICKET_PREDICTOR_LIVE_REFRESH_SECONDS
+        value: "3600"
+      - key: CRICKET_PREDICTOR_IPL_CSV_DATA_DIR
+        value: /app/data/ipl_csv
+      - key: CRICKET_PREDICTOR_ENABLE_IPL_CSV_REFRESH
+        value: "true"
+      - key: CRICKET_PREDICTOR_IPL_CSV_REFRESH_HOURS
+        value: "24"
+      - key: CRICKET_PREDICTOR_IPL_CSV_REFRESH_COMMAND
+        value: /app/scripts/refresh_ipl_csv.sh
       - key: CRICKET_PREDICTOR_MODEL_ARTIFACT_DIR
         value: /app/data/models
       - key: CRICKET_PREDICTOR_SYNTHETIC_DATA_DIR

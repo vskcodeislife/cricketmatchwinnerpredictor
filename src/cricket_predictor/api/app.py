@@ -75,13 +75,29 @@ async def _injury_refresh_loop(interval_seconds: int) -> None:
 
 async def _standings_refresh_loop(interval_seconds: int) -> None:
     """Periodic loop: refresh IPL standings from ESPN Cricinfo."""
+    from cricket_predictor.services.prediction_tracker import get_prediction_tracker
     from cricket_predictor.services.standings_service import get_standings_service
 
+    tracker = get_prediction_tracker()
     while True:
         try:
             await get_standings_service().refresh()
+            await asyncio.to_thread(tracker.rebuild_upcoming_predictions)
         except Exception as exc:
-            log.warning("Standings refresh failed: %s", exc)
+            log.warning("Standings refresh/rebuild cycle failed: %s", exc)
+        await asyncio.sleep(interval_seconds)
+
+
+async def _ipl_csv_refresh_loop(interval_seconds: int) -> None:
+    """Daily loop: pull configured IPL CSV data and refresh dependent state."""
+    from cricket_predictor.services.ipl_csv_refresh_service import get_ipl_csv_refresh_service
+
+    service = get_ipl_csv_refresh_service()
+    while True:
+        try:
+            await service.refresh_once()
+        except Exception as exc:
+            log.warning("IPL CSV refresh cycle failed: %s", exc)
         await asyncio.sleep(interval_seconds)
 
 
@@ -89,12 +105,14 @@ async def _standings_refresh_loop(interval_seconds: int) -> None:
 async def lifespan(_: FastAPI):
     settings = get_settings()
     tasks: list[asyncio.Task] = []
+    standings_loaded = False
 
     # Standings — always try on startup so first prediction is accurate
     if settings.enable_standings_refresh:
         try:
             from cricket_predictor.services.standings_service import get_standings_service
             await get_standings_service().refresh()
+            standings_loaded = True
             log.info("Initial standings loaded.")
         except Exception as exc:
             log.warning("Initial standings fetch failed (will retry): %s", exc)
@@ -116,8 +134,12 @@ async def lifespan(_: FastAPI):
         except Exception as exc:
             log.warning("Initial injury report fetch failed: %s", exc)
 
-        tracker.predict_upcoming_matches()
-        log.info("Initial upcoming match predictions saved.")
+        if standings_loaded:
+            await asyncio.to_thread(tracker.rebuild_upcoming_predictions)
+            log.info("Upcoming match predictions rebuilt from refreshed standings.")
+        else:
+            await asyncio.to_thread(tracker.predict_upcoming_matches)
+            log.info("Initial upcoming match predictions saved.")
     except Exception as exc:
         log.warning("Initial prediction tracker run failed: %s", exc)
     tasks.append(
@@ -128,6 +150,17 @@ async def lifespan(_: FastAPI):
     tasks.append(
         asyncio.create_task(_injury_refresh_loop(12 * 3600))
     )
+
+    if settings.enable_ipl_csv_refresh and settings.ipl_csv_data_dir:
+        try:
+            from cricket_predictor.services.ipl_csv_refresh_service import get_ipl_csv_refresh_service
+
+            await get_ipl_csv_refresh_service().refresh_once()
+        except Exception as exc:
+            log.warning("Initial IPL CSV refresh failed (will retry): %s", exc)
+        tasks.append(
+            asyncio.create_task(_ipl_csv_refresh_loop(settings.ipl_csv_refresh_hours * 3600))
+        )
 
     if settings.enable_live_updates:
         await get_prediction_service().refresh_live_predictions()

@@ -17,8 +17,14 @@ from pathlib import Path
 
 from cricket_predictor.api.schemas import MatchPredictionRequest
 from cricket_predictor.config.settings import Settings, get_settings
-from cricket_predictor.data.predictions_db import PredictionsDB
-from cricket_predictor.providers.cricinfo_standings import venue_advantage
+from cricket_predictor.data.predictions_db import PredictionsDB, default_predictions_db_path
+from cricket_predictor.providers.cricinfo_standings import (
+    CricinfoStandingsProvider,
+    build_recent_results_lookup,
+    resolve_team_name,
+    venue_advantage,
+)
+from cricket_predictor.providers.ipl_csv_provider import IplCsvDataProvider
 from cricket_predictor.providers.ipl_schedule import IPLScheduleProvider
 from cricket_predictor.services.override_parser import apply_overrides, parse_override
 from cricket_predictor.services.standings_service import get_standings_service
@@ -33,15 +39,16 @@ log = logging.getLogger(__name__)
 RETRAIN_WRONG_THRESHOLD = 5
 # …but only if we have at least this many total predictions logged
 RETRAIN_MIN_PREDICTIONS = 8
+# Also retrain after a few completed matches so correct calls reinforce the model.
+RETRAIN_FEEDBACK_THRESHOLD = 3
 
 
 class PredictionTrackerService:
-    """Orchestrates upcoming-match predictions and self-learning retrains."""
+    """Orchestrates upcoming-match predictions and feedback-driven retrains."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        db_path = Path(settings.model_artifact_dir).parent.parent / "data" / "predictions.db"
-        self._db = PredictionsDB(db_path)
+        self._db = PredictionsDB(default_predictions_db_path(settings.model_artifact_dir))
         self._schedule = IPLScheduleProvider()
 
     # ------------------------------------------------------------------
@@ -126,6 +133,7 @@ class PredictionTrackerService:
                 confidence_score=result["confidence_score"],
                 explanation=result.get("explanation", ""),
                 ai_analysis="",
+                feature_snapshot=request.model_dump(),
             )
             log.info(
                 "Saved prediction for %s: %s vs %s → %s (%.0f%%)",
@@ -142,6 +150,11 @@ class PredictionTrackerService:
 
         return new_predictions
 
+    def rebuild_upcoming_predictions(self) -> list[dict]:
+        """Recompute saved future predictions using the latest live context."""
+        self._invalidate_future_predictions()
+        return self.predict_upcoming_matches()
+
     def check_results_and_learn(self) -> dict:
         """Check cricsheet for match results and trigger retraining if needed.
 
@@ -153,8 +166,11 @@ class PredictionTrackerService:
         if not pending_ids:
             return {"checked": 0, "updated": 0, "retrained": False}
 
-        # Build a lookup of match_id → winner from cricsheet recently-played data
-        result_lookup = self._fetch_cricsheet_results()
+        # Merge fast points-table results with cricsheet data; if both sources
+        # know a result, prefer cricsheet because it is the richer scorecard feed.
+        result_lookup = self._fetch_points_table_results()
+        result_lookup.update(self._fetch_local_csv_results())
+        result_lookup.update(self._fetch_cricsheet_results())
 
         for match_id in pending_ids:
             checked += 1
@@ -177,13 +193,20 @@ class PredictionTrackerService:
 
         retrained = False
         stats = self._db.get_accuracy_stats()
+        completed_since_retrain = self._db.count_resolved_predictions_since(stats.get("last_retrain_at"))
+        retrain_reason: str | None = None
         if (
             stats["wrong_since_retrain"] >= RETRAIN_WRONG_THRESHOLD
             and stats["total"] >= RETRAIN_MIN_PREDICTIONS
         ):
+            retrain_reason = f"{stats['wrong_since_retrain']} wrong since last retrain"
+        elif completed_since_retrain >= RETRAIN_FEEDBACK_THRESHOLD:
+            retrain_reason = f"{completed_since_retrain} completed predictions since last retrain"
+
+        if retrain_reason:
             log.info(
-                "Triggering self-learning retrain (%d wrong since last retrain).",
-                stats["wrong_since_retrain"],
+                "Triggering self-learning retrain (%s).",
+                retrain_reason,
             )
             retrained = self._do_retrain()
 
@@ -425,24 +448,50 @@ class PredictionTrackerService:
                 if not winner_raw:
                     continue
                 # Normalise team name to full name via SHORT_TEAM aliases
-                winner = SHORT_TEAM.get(winner_raw, winner_raw)
+                winner = resolve_team_name(SHORT_TEAM.get(winner_raw, winner_raw))
                 team_a_raw, team_b_raw = teams
-                team_a = SHORT_TEAM.get(team_a_raw, team_a_raw)
-                team_b = SHORT_TEAM.get(team_b_raw, team_b_raw)
+                team_a = resolve_team_name(SHORT_TEAM.get(team_a_raw, team_a_raw))
+                team_b = resolve_team_name(SHORT_TEAM.get(team_b_raw, team_b_raw))
                 results[(team_a, team_b, dates[0])] = winner
                 results[(team_b, team_a, dates[0])] = winner
             except Exception:  # noqa: BLE001
                 continue
         return results
 
+    def _fetch_points_table_results(self) -> dict[tuple[str, str, str], str]:
+        """Extract recent completed results from the live points-table page."""
+        standings = get_standings_service()
+        cached_lookup = standings.recent_results_lookup()
+        if cached_lookup:
+            return cached_lookup
+
+        try:
+            provider = CricinfoStandingsProvider(self._settings.cricinfo_standings_url)
+            return build_recent_results_lookup(provider.fetch_recent_results())
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Points-table result fetch failed: %s", exc)
+            return {}
+
+    def _fetch_local_csv_results(self) -> dict[tuple[str, str, str], str]:
+        """Extract completed winners from a local IPL CSV export when configured."""
+        dataset_dir = self._settings.ipl_csv_data_dir
+        if not dataset_dir:
+            return {}
+
+        try:
+            return IplCsvDataProvider(dataset_dir).fetch_results_lookup()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Local IPL CSV result fetch failed: %s", exc)
+            return {}
+
     def _do_retrain(self) -> bool:
-        """Download fresh cricsheet data, retrain, and hot-reload models."""
+        """Retrain from local cricsheet data plus completed prediction history."""
         try:
             from cricket_predictor.services.data_update_service import DataUpdateService
             from cricket_predictor.services.prediction_service import get_prediction_service
 
             svc = DataUpdateService(self._settings)
-            retrained = svc.check_and_retrain()
+            retrained = svc.retrain_from_local_data()
             if retrained:
                 get_prediction_service().reload_models()
                 self._db.mark_retrained()
