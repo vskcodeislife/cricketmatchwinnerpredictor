@@ -15,16 +15,19 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$target_dir" "$extract_dir"
 
-if [ -z "${KAGGLE_USERNAME:-}" ] || [ -z "${KAGGLE_KEY:-}" ]; then
-	echo "KAGGLE_USERNAME and KAGGLE_KEY must be set for IPL CSV refresh." >&2
-	exit 1
-fi
-
 echo "Downloading IPL CSV dataset into $tmp_dir"
-curl --fail --location --silent --show-error \
-	--user "$KAGGLE_USERNAME:$KAGGLE_KEY" \
-	--output "$archive_path" \
-	"$dataset_url"
+if [ -n "${KAGGLE_USERNAME:-}" ] && [ -n "${KAGGLE_KEY:-}" ]; then
+	echo "Using Kaggle credentials for dataset download"
+	curl --fail --location --silent --show-error \
+		--user "$KAGGLE_USERNAME:$KAGGLE_KEY" \
+		--output "$archive_path" \
+		"$dataset_url"
+else
+	echo "Downloading without Kaggle credentials"
+	curl --fail --location --silent --show-error \
+		--output "$archive_path" \
+		"$dataset_url"
+fi
 
 echo "Extracting IPL CSV dataset"
 python - <<'PY' "$archive_path" "$extract_dir"

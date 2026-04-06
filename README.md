@@ -100,13 +100,13 @@ uvicorn cricket_predictor.api.app:app --reload --app-dir src
 - `CRICKET_PREDICTOR_IPL_CSV_REFRESH_HOURS=24`
 - `CRICKET_PREDICTOR_IPL_CSV_REFRESH_COMMAND=/absolute/path/to/scripts/refresh_ipl_csv.sh`
 - `CRICKET_PREDICTOR_IPL_CSV_DOWNLOAD_URL=https://www.kaggle.com/api/v1/datasets/download/krishd123/ipl-2026-complete-dataset`
-- `KAGGLE_USERNAME=your-kaggle-username`
-- `KAGGLE_KEY=your-kaggle-api-key`
+- `KAGGLE_USERNAME=your-kaggle-username` (optional)
+- `KAGGLE_KEY=your-kaggle-api-key` (optional)
 - `CRICKET_PREDICTOR_AZURE_OPENAI_API_KEY=your-key` — Enables AI pre-match analysis via Azure OpenAI GPT-4.1
 - `CRICKET_PREDICTOR_AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com`
 - `CRICKET_PREDICTOR_AZURE_OPENAI_DEPLOYMENT=gpt-4.1`
 
-For Kaggle-backed updates, the bundled refresh script uses `curl` against the Kaggle dataset download endpoint and authenticates with `KAGGLE_USERNAME` and `KAGGLE_KEY`. It downloads the archive, extracts it, and copies `matches.csv`, `points_table.csv`, `orange_cap.csv`, `purple_cap.csv`, `squads.csv`, and any optional files such as `deliveries.csv` into `CRICKET_PREDICTOR_IPL_CSV_DATA_DIR`.
+For Kaggle-backed updates, the bundled refresh script uses `curl` against the Kaggle dataset download endpoint. If `KAGGLE_USERNAME` and `KAGGLE_KEY` are present it uses them, otherwise it attempts an anonymous download. It then extracts the archive and copies `matches.csv`, `points_table.csv`, `orange_cap.csv`, `purple_cap.csv`, `squads.csv`, and any optional files such as `deliveries.csv` into `CRICKET_PREDICTOR_IPL_CSV_DATA_DIR`.
 
 ## Example Requests
 
