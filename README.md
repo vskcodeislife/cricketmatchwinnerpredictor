@@ -100,13 +100,14 @@ uvicorn cricket_predictor.api.app:app --reload --app-dir src
 - `CRICKET_PREDICTOR_IPL_CSV_REFRESH_HOURS=24`
 - `CRICKET_PREDICTOR_IPL_CSV_REFRESH_COMMAND=/absolute/path/to/scripts/refresh_ipl_csv.sh`
 - `CRICKET_PREDICTOR_IPL_CSV_DOWNLOAD_URL=https://www.kaggle.com/api/v1/datasets/download/krishd123/ipl-2026-complete-dataset`
+- `CRICKET_PREDICTOR_IPL_CSV_DOWNLOAD_URL_ALT=https://www.kaggle.com/api/v1/datasets/download/sujalninawe/ipl-2026-ball-by-ball-dataset-daily-updated`
 - `KAGGLE_USERNAME=your-kaggle-username` (optional)
 - `KAGGLE_KEY=your-kaggle-api-key` (optional)
 - `CRICKET_PREDICTOR_AZURE_OPENAI_API_KEY=your-key` — Enables AI pre-match analysis via Azure OpenAI GPT-4.1
 - `CRICKET_PREDICTOR_AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com`
 - `CRICKET_PREDICTOR_AZURE_OPENAI_DEPLOYMENT=gpt-4.1`
 
-For Kaggle-backed updates, the bundled refresh script uses `curl` against the Kaggle dataset download endpoint. If `KAGGLE_USERNAME` and `KAGGLE_KEY` are present it uses them, otherwise it attempts an anonymous download. It then extracts the archive and copies `matches.csv`, `points_table.csv`, `orange_cap.csv`, `purple_cap.csv`, `squads.csv`, and any optional files such as `deliveries.csv` into `CRICKET_PREDICTOR_IPL_CSV_DATA_DIR`.
+For Kaggle-backed updates, the bundled refresh script tries multiple data sources in priority order. The primary source (`CRICKET_PREDICTOR_IPL_CSV_DOWNLOAD_URL`) is a standard IPL CSV dataset. If it fails, the alternate source (`CRICKET_PREDICTOR_IPL_CSV_DOWNLOAD_URL_ALT`) is tried—this can be a ball-by-ball dataset that gets automatically normalised into the standard file layout. If `KAGGLE_USERNAME` and `KAGGLE_KEY` are present they are used for authentication, otherwise an anonymous download is attempted.
 
 ## Example Requests
 
@@ -162,6 +163,7 @@ This section is a comprehensive reference for the data lifecycle, training pipel
 | **Synthetic CSV** | Offline bootstrap | `data/synthetic/` | `matches.csv`, `players.csv`, `teams.csv`, `venues.csv` | Initial training when no real data exists |
 | **Cricsheet JSON** | Historical matches | `data/cricsheet/` (`CRICKET_PREDICTOR_CRICSHEET_DATA_DIR`) | `ipl_male_json/*.json`, `t20s_male_json/*.json`, `recently_played_30_male_json/*.json` | Real match parsing for training features + result verification |
 | **Kaggle IPL CSV** | Live season data | `CRICKET_PREDICTOR_IPL_CSV_DATA_DIR` | `matches.csv`, `points_table.csv`, `orange_cap.csv`, `purple_cap.csv`, `squads.csv`, `deliveries.csv` (optional) | Team metrics, season leaders, squad rosters, completed-match results |
+| **Kaggle Ball-by-Ball** | Live season data (alternate) | `CRICKET_PREDICTOR_IPL_CSV_DOWNLOAD_URL_ALT` | Single ball-by-ball CSV → auto-normalised into standard files | Fallback data source when primary Kaggle dataset is stale or unavailable |
 | **ESPN Cricinfo** | Live standings | `CRICKET_PREDICTOR_CRICINFO_STANDINGS_URL` | HTML page scrape | Points table, NRR, recent form, W/L streaks |
 | **Prediction DB** | Internal feedback | `data/predictions.db` (SQLite) | `match_predictions` table | Completed prediction snapshots used as training examples |
 | **Injury Report** | External feed | `data/injury_report.json` | JSON file | Player unavailability → override adjustments on bat/bowl strengths |
@@ -340,39 +342,48 @@ Before any retrain commits new artifacts, a quality gate runs:
 
 ### IPL CSV Download Pipeline
 
+The refresh script (`scripts/refresh_ipl_csv.sh`) tries multiple Kaggle data sources in priority order. If the primary source fails or is stale, it falls back to the alternate source automatically.
+
 ```
-  ┌────────────────────┐
-  │  refresh_ipl_csv.sh│
-  │  (cron / BG loop)  │
-  └────────┬───────────┘
-           │
-           ▼
-  ┌────────────────────┐     ┌────────────────────┐
-  │ curl Kaggle API    │────▶│ Extract ZIP         │
-  │ (optional auth)    │     │ (Python zipfile)    │
-  └────────────────────┘     └────────┬───────────┘
-                                      │
-           ┌──────────────────────────┘
-           ▼
-  ┌────────────────────────────────────────────────┐
-  │  Validate required files exist:                │
-  │  matches.csv, points_table.csv, orange_cap.csv,│
-  │  purple_cap.csv, squads.csv                    │
-  └────────┬───────────────────────────────────────┘
-           │
-           ▼
-  ┌────────────────────────────────────────────────┐
-  │  Copy to CRICKET_PREDICTOR_IPL_CSV_DATA_DIR    │
-  └────────┬───────────────────────────────────────┘
-           │
-           ▼
-  ┌────────────────────────────────────────────────┐
-  │  IplCsvRefreshService.refresh_once()           │
-  │  → check_results_and_learn()                   │
-  │  → rebuild_upcoming_predictions()              │
-  │  → refresh_live_predictions()                  │
-  └────────────────────────────────────────────────┘
+  ┌─────────────────────────────┐
+  │ refresh_ipl_csv.sh          │
+  │ (cron / background loop)    │
+  └────────────┬────────────────┘
+               │
+               ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ Source 1 (primary): krishd123/ipl-2026-complete-dataset    │
+  │   → curl Kaggle API (optional auth)                        │
+  │   → Extract ZIP                                            │
+  │   → If standard layout (matches.csv+friends) → use it     │
+  └──────────────┬──────────────────────────────────────────────┘
+                 │ FAIL?
+                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ Source 2 (alt): sujalninawe/ipl-2026-ball-by-ball-dataset  │
+  │   → curl Kaggle API (optional auth)                        │
+  │   → Extract ZIP                                            │
+  │   → Ball-by-ball CSV detected                              │
+  │   → normalize_bbb_csv.py derives standard files:           │
+  │     matches.csv, deliveries.csv, points_table.csv,         │
+  │     orange_cap.csv, purple_cap.csv, squads.csv             │
+  └──────────────┬──────────────────────────────────────────────┘
+                 │
+                 ▼
+  ┌─────────────────────────────────────────────────┐
+  │  Copy to CRICKET_PREDICTOR_IPL_CSV_DATA_DIR     │
+  └──────────────┬──────────────────────────────────┘
+                 │
+                 ▼
+  ┌─────────────────────────────────────────────────┐
+  │  IplCsvRefreshService.refresh_once()            │
+  │  → check_results_and_learn()                    │
+  │  → rebuild_upcoming_predictions()               │
+  │  → refresh_live_predictions()                   │
+  └─────────────────────────────────────────────────┘
 ```
+
+To add more data sources, set additional `CRICKET_PREDICTOR_IPL_CSV_DOWNLOAD_URL_ALT` entries or extend the `try_source` calls in the shell script. The normalizer (`scripts/normalize_bbb_csv.py`) auto-detects column layouts via flexible aliases, so it handles multiple ball-by-ball providers without code changes.
 
 ### Result Verification Sources (Priority Order)
 
@@ -392,6 +403,20 @@ Pre-match AI analysis (Azure OpenAI GPT-4.1) is grounded with verified data to p
 - **Stale detection**: regex scan of existing analysis for player names not in current verified squads → triggers regeneration
 - **System prompt**: instructs the LLM to only mention players from the verified lists
 
+### Signal Priority (match_context_service.py)
+
+When building match features, signals are resolved in the following priority order:
+
+| Signal | Primary Source | Fallback |
+|--------|---------------|----------|
+| **recent_form** | Current-season standings (scraped) | Cricsheet match history (multi-season) |
+| **batting_strength** | Standings-derived (if team has ≥ 1 game) | Neutral 65.0 |
+| **bowling_strength** | Standings-derived (if team has ≥ 1 game) | Neutral 65.0 |
+| **head_to_head** | Cricsheet match history (last 7) | CSV provider h2h, then 0.5 |
+| **leader stats** | IPL CSV (orange/purple cap) | 0.0 |
+
+If the IPL CSV data directory is configured, CSV-derived metrics **override** standings for form, batting/bowling strength, and head-to-head.
+
 ### Key Thresholds
 
 | Constant | Value | Location | Effect |
@@ -399,7 +424,7 @@ Pre-match AI analysis (Azure OpenAI GPT-4.1) is grounded with verified data to p
 | `RETRAIN_WRONG_THRESHOLD` | 5 | `prediction_tracker.py` | Wrong predictions since last retrain to trigger retrain |
 | `RETRAIN_MIN_PREDICTIONS` | 8 | `prediction_tracker.py` | Minimum total predictions before wrong-streak retrain fires |
 | `RETRAIN_FEEDBACK_THRESHOLD` | 3 | `prediction_tracker.py` | Completed predictions since last retrain to trigger feedback retrain |
-| `_MIN_GAMES_FOR_NRR` | 3 | `prediction_tracker.py`, `match_context_service.py` | Minimum team games before using NRR-derived strengths (fallback: 65.0) |
+| `_MIN_GAMES_FOR_NRR` | 1 | `match_context_service.py` | Minimum team games before using standings-derived strengths (fallback: 65.0) |
 
 | `_VALIDATION_TOLERANCE` | 0.05 | `data_update_service.py` | Max accuracy drop (5%) tolerated before rejecting a retrain |
 | `_MIN_VALIDATION_SAMPLES` | 15 | `data_update_service.py` | Minimum held-out rows needed to run validation (dataset must be ≥ 30) |

@@ -10,8 +10,8 @@ from cricket_predictor.providers.ipl_csv_provider import IplCsvDataProvider, Tea
 from cricket_predictor.providers.match_history_provider import MatchHistoryProvider
 from cricket_predictor.services.standings_service import get_standings_service
 
-# Keep the same neutral threshold used elsewhere for standings-derived strengths.
-_MIN_GAMES_FOR_NRR = 3
+# Minimum games a team must have played before we trust standings-derived strengths.
+_MIN_GAMES_FOR_NRR = 1
 
 
 @dataclass(frozen=True)
@@ -84,8 +84,10 @@ class MatchContextService:
         ta_games = ta_standing.played if ta_standing else 0
         tb_games = tb_standing.played if tb_standing else 0
 
-        team_a_recent_form = self._history.recent_form(team_a, fallback=standings.recent_form(team_a))
-        team_b_recent_form = self._history.recent_form(team_b, fallback=standings.recent_form(team_b))
+        # Prefer current-season standings form; fall back to cricsheet history
+        # only when the team is absent from the standings table.
+        team_a_recent_form = standings.recent_form(team_a) if ta_standing else self._history.recent_form(team_a)
+        team_b_recent_form = standings.recent_form(team_b) if tb_standing else self._history.recent_form(team_b)
         team_a_batting_strength = standings.batting_strength(team_a) if ta_games >= _MIN_GAMES_FOR_NRR else 65.0
         team_b_batting_strength = standings.batting_strength(team_b) if tb_games >= _MIN_GAMES_FOR_NRR else 65.0
         team_a_bowling_strength = standings.bowling_strength(team_a) if ta_games >= _MIN_GAMES_FOR_NRR else 65.0
