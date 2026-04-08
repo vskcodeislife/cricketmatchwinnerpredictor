@@ -356,7 +356,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
 async def homepage(page: int = 1) -> HTMLResponse:
     from cricket_predictor.services.prediction_tracker import get_prediction_tracker
 
-    per_page = 10
+    per_page = 5
     page = max(1, page)
     tracker = get_prediction_tracker()
     next_pred = tracker.get_next_match_prediction()

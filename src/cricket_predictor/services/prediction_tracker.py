@@ -64,6 +64,9 @@ class PredictionTrackerService:
     def predict_upcoming_matches(self) -> list[dict]:
         """Make predictions for matches that don't have one yet.
 
+        Also backfills any completed matches that were missed (e.g. the app
+        was set up after the season started).
+
         Returns a list of newly-created prediction records.
         """
         from cricket_predictor.services.prediction_service import get_prediction_service
@@ -72,7 +75,9 @@ class PredictionTrackerService:
         context_service = get_match_context_service(self._settings)
         new_predictions: list[dict] = []
 
-        for match in self._schedule.upcoming_matches():
+        # Include completed matches without a prediction (backfill) + upcoming
+        all_targets = self._schedule.completed_matches() + self._schedule.upcoming_matches()
+        for match in all_targets:
             if self._db.get_prediction(match["match_id"]):
                 continue  # Already predicted
 
