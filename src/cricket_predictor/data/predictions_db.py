@@ -148,7 +148,11 @@ class PredictionsDB:
             )
 
     def record_result(self, match_id: str, actual_winner: str) -> bool | None:
-        """Fill in actual result. Returns True/False/None (correct/wrong/not found)."""
+        """Fill in actual result. Returns True/False/None (correct/wrong/not found).
+
+        If *actual_winner* is ``"No Result"`` the match is marked as abandoned
+        (``is_correct = -1``) and no accuracy counters are changed.
+        """
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT predicted_winner, is_correct FROM match_predictions WHERE match_id = ?",
@@ -156,6 +160,17 @@ class PredictionsDB:
             ).fetchone()
             if row is None or row["is_correct"] is not None:
                 return None
+
+            # Abandoned / No Result → mark with is_correct = -1
+            if actual_winner == "No Result":
+                conn.execute(
+                    """UPDATE match_predictions
+                       SET actual_winner = ?, is_correct = -1, resolved_at = datetime('now')
+                       WHERE match_id = ?""",
+                    (actual_winner, match_id),
+                )
+                return None
+
             is_correct = int(row["predicted_winner"] == actual_winner)
             conn.execute(
                 """UPDATE match_predictions
@@ -220,6 +235,22 @@ class PredictionsDB:
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def get_paginated_predictions(self, page: int = 1, per_page: int = 10) -> tuple[list[dict], int]:
+        """Return a page of past predictions and total count."""
+        offset = (page - 1) * per_page
+        with self._connect() as conn:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM match_predictions WHERE match_date < date('now')"
+            ).fetchone()[0]
+            rows = conn.execute(
+                """SELECT * FROM match_predictions
+                   WHERE match_date < date('now')
+                   ORDER BY match_date DESC, created_at DESC
+                   LIMIT ? OFFSET ?""",
+                (per_page, offset),
+            ).fetchall()
+            return [dict(r) for r in rows], total
 
     def get_upcoming_predictions(self, limit: int = 7) -> list[dict]:
         """Return saved predictions for future matches (today and beyond)."""

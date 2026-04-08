@@ -178,8 +178,10 @@ class PredictionTrackerService:
             )
             if winner:
                 was_correct = self._db.record_result(match_id, winner)
-                if was_correct is not None:
-                    updated += 1
+                updated += 1
+                if winner == "No Result":
+                    log.info("Result recorded for %s: abandoned / no result", match_id)
+                elif was_correct is not None:
                     log.info(
                         "Result recorded for %s: actual=%s (%s)",
                         match_id, winner, "✓" if was_correct else "✗",
@@ -275,6 +277,9 @@ class PredictionTrackerService:
 
     def get_recent_history(self, limit: int = 10) -> list[dict]:
         return self._db.get_recent_predictions(limit)
+
+    def get_paginated_history(self, page: int = 1, per_page: int = 10) -> tuple[list[dict], int]:
+        return self._db.get_paginated_predictions(page, per_page)
 
     def get_accuracy_stats(self) -> dict:
         return self._db.get_accuracy_stats()
@@ -523,7 +528,16 @@ class PredictionTrackerService:
                 outcome = info.get("outcome", {})
                 winner_raw = outcome.get("winner")
                 if not winner_raw:
-                    continue
+                    # Abandoned / no result / tie without a super-over winner
+                    result_type = outcome.get("result", "")
+                    if result_type in ("no result", "tie") or not winner_raw:
+                        team_a_raw, team_b_raw = teams
+                        team_a = resolve_team_name(SHORT_TEAM.get(team_a_raw, team_a_raw))
+                        team_b = resolve_team_name(SHORT_TEAM.get(team_b_raw, team_b_raw))
+                        if result_type in ("no result",):
+                            results[(team_a, team_b, dates[0])] = "No Result"
+                            results[(team_b, team_a, dates[0])] = "No Result"
+                        continue
                 # Normalise team name to full name via SHORT_TEAM aliases
                 winner = resolve_team_name(SHORT_TEAM.get(winner_raw, winner_raw))
                 team_a_raw, team_b_raw = teams

@@ -7,17 +7,51 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 router = APIRouter()
 
-_STATUS_ICON = {1: "✅", 0: "❌", None: "⏳"}
-_STATUS_LABEL = {1: "Correct", 0: "Wrong", None: "Pending"}
-_STATUS_BG = {1: "bg-green-50", 0: "bg-red-50", None: "bg-yellow-50"}
+_STATUS_ICON = {1: "✅", 0: "❌", None: "⏳", -1: "🚫"}
+_STATUS_LABEL = {1: "Correct", 0: "Wrong", None: "Pending", -1: "Abandoned"}
+_STATUS_BG = {1: "bg-green-50", 0: "bg-red-50", None: "bg-yellow-50", -1: "bg-gray-50"}
 _STATUS_BADGE = {
     1: "bg-green-100 text-green-800",
     0: "bg-red-100 text-red-800",
     None: "bg-yellow-100 text-yellow-800",
+    -1: "bg-gray-200 text-gray-600",
 }
 
 
-def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, upcoming: list[dict]) -> str:
+import math
+
+
+def _pagination_html(page: int, per_page: int, total: int) -> str:
+    """Render pagination controls below the history table."""
+    if total <= per_page:
+        return ""
+    total_pages = math.ceil(total / per_page)
+    parts: list[str] = []
+    parts.append('<div class="px-6 py-3 border-t border-gray-100 flex items-center justify-between">')
+    parts.append(f'<span class="text-xs text-gray-500">Showing {(page - 1) * per_page + 1}–{min(page * per_page, total)} of {total}</span>')
+    parts.append('<div class="flex items-center gap-1">')
+    if page > 1:
+        parts.append(f'<a href="/?page={page - 1}" class="px-3 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100">← Prev</a>')
+    else:
+        parts.append('<span class="px-3 py-1 text-xs rounded border border-gray-200 text-gray-300 cursor-default">← Prev</span>')
+    # Show page numbers (max 7 visible)
+    start_pg = max(1, page - 3)
+    end_pg = min(total_pages, start_pg + 6)
+    start_pg = max(1, end_pg - 6)
+    for p in range(start_pg, end_pg + 1):
+        if p == page:
+            parts.append(f'<span class="px-3 py-1 text-xs rounded bg-indigo-600 text-white font-medium">{p}</span>')
+        else:
+            parts.append(f'<a href="/?page={p}" class="px-3 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100">{p}</a>')
+    if page < total_pages:
+        parts.append(f'<a href="/?page={page + 1}" class="px-3 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100">Next →</a>')
+    else:
+        parts.append('<span class="px-3 py-1 text-xs rounded border border-gray-200 text-gray-300 cursor-default">Next →</span>')
+    parts.append('</div></div>')
+    return "".join(parts)
+
+
+def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, upcoming: list[dict], page: int = 1, per_page: int = 10, total_history: int = 0) -> str:
     accuracy = stats.get("accuracy_pct", 0.0)
     total = stats.get("total", 0)
     correct = stats.get("correct", 0)
@@ -285,8 +319,8 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
     <!-- Prediction history -->
     <div class="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
       <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-        <h2 class="font-semibold text-gray-700">📜 Prediction History (last 10)</h2>
-        <span class="text-xs text-gray-400">✅ Correct &nbsp; ❌ Wrong &nbsp; ⏳ Pending</span>
+        <h2 class="font-semibold text-gray-700">📜 Prediction History</h2>
+        <span class="text-xs text-gray-400">✅ Correct &nbsp; ❌ Wrong &nbsp; ⏳ Pending &nbsp; 🚫 Abandoned</span>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-left">
@@ -305,6 +339,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
           </tbody>
         </table>
       </div>
+      {_pagination_html(page, per_page, total_history)}
     </div>
 
   </main>
@@ -318,15 +353,17 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
 
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def homepage() -> HTMLResponse:
+async def homepage(page: int = 1) -> HTMLResponse:
     from cricket_predictor.services.prediction_tracker import get_prediction_tracker
 
+    per_page = 10
+    page = max(1, page)
     tracker = get_prediction_tracker()
     next_pred = tracker.get_next_match_prediction()
-    history = tracker.get_recent_history(10)
+    history, total_history = tracker.get_paginated_history(page, per_page)
     stats = tracker.get_accuracy_stats()
     upcoming = tracker._db.get_upcoming_predictions(7)
-    html = _render_homepage(next_pred, history, stats, upcoming)
+    html = _render_homepage(next_pred, history, stats, upcoming, page, per_page, total_history)
     return HTMLResponse(content=html)
 
 

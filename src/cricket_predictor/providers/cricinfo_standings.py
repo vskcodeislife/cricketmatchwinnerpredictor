@@ -250,7 +250,7 @@ class _RecentResultsParser(HTMLParser):
         team_a = current.get("team_a", "").strip()
         team_b = current.get("team_b", "").strip()
         winner_side = current.get("winner_side", "")
-        if not (match_date and team_a and team_b and winner_side):
+        if not (match_date and team_a and team_b):
             return
 
         try:
@@ -258,7 +258,11 @@ class _RecentResultsParser(HTMLParser):
         except ValueError:
             return
 
-        winner = team_a if winner_side == "team_a" else team_b
+        winner = ""
+        if winner_side:
+            winner = team_a if winner_side == "team_a" else team_b
+        else:
+            winner = "No Result"
         self.results.append(
             RecentMatchResult(
                 match_date=iso_date,
