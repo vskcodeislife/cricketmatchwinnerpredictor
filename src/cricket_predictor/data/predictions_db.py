@@ -361,17 +361,28 @@ class PredictionsDB:
 
     def get_accuracy_stats(self) -> dict:
         with self._connect() as conn:
-            row = conn.execute("SELECT * FROM model_accuracy WHERE id = 1").fetchone()
-            if row is None:
-                return {"total": 0, "correct": 0, "accuracy_pct": 0.0, "wrong_since_retrain": 0}
-            total = row["total_predictions"]
-            correct = row["correct_predictions"]
+            # Compute from actual resolved predictions (is_correct 0 or 1).
+            # Abandoned (is_correct = -1) and pending (NULL) are excluded.
+            agg = conn.execute(
+                """SELECT
+                       COUNT(*) AS total,
+                       SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS correct
+                   FROM match_predictions
+                   WHERE is_correct IN (0, 1)"""
+            ).fetchone()
+            total = agg["total"] or 0
+            correct = agg["correct"] or 0
+
+            meta = conn.execute("SELECT wrong_since_last_retrain, last_retrain_at FROM model_accuracy WHERE id = 1").fetchone()
+            wrong_since = meta["wrong_since_last_retrain"] if meta else 0
+            last_retrain = meta["last_retrain_at"] if meta else None
+
             return {
                 "total": total,
                 "correct": correct,
                 "accuracy_pct": round(100.0 * correct / total, 1) if total else 0.0,
-                "wrong_since_retrain": row["wrong_since_last_retrain"],
-                "last_retrain_at": row["last_retrain_at"],
+                "wrong_since_retrain": wrong_since,
+                "last_retrain_at": last_retrain,
             }
 
     def get_pending_result_match_ids(self) -> list[str]:
