@@ -11,8 +11,17 @@ filled in automatically.
 
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 from typing import TypedDict
+
+# IST = UTC+5:30
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+# Match start hour mapping
+_TIME_HOURS = {
+    "3:00 PM IST": 15,
+    "7:30 PM IST": 19,
+}
 
 
 class ScheduledMatch(TypedDict):
@@ -209,8 +218,20 @@ class IPLScheduleProvider:
         return [m for m in self._schedule if m["match_date"] >= cutoff and not m["team_a"].startswith("TBD")]
 
     def next_match(self) -> ScheduledMatch | None:
-        today = date.today().isoformat()
-        upcoming = [m for m in self._schedule if m["match_date"] >= today and not m["team_a"].startswith("TBD")]
+        now_ist = datetime.now(_IST)
+        today_str = now_ist.date().isoformat()
+        current_hour = now_ist.hour
+        upcoming: list[ScheduledMatch] = []
+        for m in self._schedule:
+            if m["team_a"].startswith("TBD"):
+                continue
+            if m["match_date"] > today_str:
+                upcoming.append(m)
+            elif m["match_date"] == today_str:
+                # Include only if the match hasn't started yet
+                start_hour = _TIME_HOURS.get(m["match_time"], 19)
+                if current_hour < start_hour:
+                    upcoming.append(m)
         return upcoming[0] if upcoming else None
 
     def completed_matches(self) -> list[ScheduledMatch]:

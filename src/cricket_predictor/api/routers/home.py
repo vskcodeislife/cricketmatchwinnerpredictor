@@ -367,6 +367,12 @@ async def homepage(page: int = 1) -> HTMLResponse:
     history, total_history = tracker.get_paginated_history(page, per_page)
     stats = tracker.get_accuracy_stats()
     upcoming = tracker._db.get_upcoming_predictions(7)
+    # Merge match_time from schedule into DB predictions
+    schedule = tracker._schedule
+    time_lookup = {m["match_id"]: m["match_time"] for m in schedule.all_matches()}
+    for u in upcoming:
+        if "match_time" not in u or not u.get("match_time"):
+            u["match_time"] = time_lookup.get(u.get("match_id", ""), "7:30 PM IST")
     html = _render_homepage(next_pred, history, stats, upcoming, page, per_page, total_history)
     return HTMLResponse(content=html)
 
