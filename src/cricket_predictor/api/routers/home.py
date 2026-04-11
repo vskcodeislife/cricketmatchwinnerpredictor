@@ -145,11 +145,30 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
         </div>"""
 
     # ── Upcoming match table ─────────────────────────────────
-    from datetime import date
-    today = date.today().isoformat()
+    from datetime import date, datetime, timezone, timedelta
+    _IST = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(_IST)
+    today = now_ist.date().isoformat()
+    current_hour = now_ist.hour
+    current_minute = now_ist.minute
+    _TIME_START = {"3:00 PM IST": (15, 0), "7:30 PM IST": (19, 30)}
+
     # Include today's matches (>=) but exclude the featured next-match shown above
+    # and exclude matches whose start time has already passed today
     next_match_id = next_pred.get("match_id") if next_pred else None
-    future_matches = [m for m in upcoming if m.get("match_date", "") >= today and m.get("match_id") != next_match_id][:7]
+    future_matches = []
+    for m in upcoming:
+        m_date = m.get("match_date", "")
+        if m_date < today:
+            continue
+        if m.get("match_id") == next_match_id:
+            continue
+        if m_date == today:
+            start_h, start_m = _TIME_START.get(m.get("match_time", "7:30 PM IST"), (19, 30))
+            if (current_hour, current_minute) >= (start_h, start_m):
+                continue  # match already started, skip
+        future_matches.append(m)
+    future_matches = future_matches[:7]
 
     upcoming_rows = ""
     for idx, m in enumerate(future_matches):
