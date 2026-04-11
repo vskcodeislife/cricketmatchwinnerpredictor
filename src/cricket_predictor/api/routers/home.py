@@ -472,6 +472,8 @@ async def admin_regenerate() -> RedirectResponse:
         pass
     # Force-clear all future predictions so they are re-generated.
     tracker._invalidate_future_predictions()
+    # Check completed match results and record winners
+    tracker.check_results_and_learn()
     # Regenerate all predictions quickly; AI analysis is generated lazily
     # for the current next match when the homepage is viewed.
     tracker.predict_upcoming_matches()
