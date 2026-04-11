@@ -101,6 +101,54 @@ async def _ipl_csv_refresh_loop(interval_seconds: int) -> None:
         await asyncio.sleep(interval_seconds)
 
 
+async def _scheduled_regenerate_loop() -> None:
+    """Run regenerate at 7:30 PM IST and 1:00 AM IST daily."""
+    from datetime import datetime, timezone, timedelta
+
+    from cricket_predictor.services.prediction_tracker import get_prediction_tracker
+    from cricket_predictor.services.standings_service import get_standings_service
+
+    _IST = timezone(timedelta(hours=5, minutes=30))
+    # Target times in IST: 19:30 and 01:00
+    SCHEDULE_TIMES = [(19, 30), (1, 0)]
+
+    while True:
+        now = datetime.now(_IST)
+        # Find the next scheduled time
+        candidates = []
+        for hour, minute in SCHEDULE_TIMES:
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target <= now:
+                target += timedelta(days=1)
+            candidates.append(target)
+        next_run = min(candidates)
+        wait_seconds = (next_run - now).total_seconds()
+        log.info("Scheduled regenerate: next run at %s IST (in %.0f min).", next_run.strftime("%H:%M"), wait_seconds / 60)
+        await asyncio.sleep(wait_seconds)
+
+        try:
+            log.info("Scheduled regenerate starting.")
+            tracker = get_prediction_tracker()
+            # Refresh standings
+            try:
+                await get_standings_service().refresh()
+            except Exception:
+                pass
+            # Refresh injuries
+            try:
+                tracker.refresh_injury_overrides()
+            except Exception:
+                pass
+            # Check results and learn
+            tracker.check_results_and_learn()
+            # Rebuild predictions
+            tracker._invalidate_future_predictions()
+            tracker.predict_upcoming_matches()
+            log.info("Scheduled regenerate completed.")
+        except Exception as exc:
+            log.warning("Scheduled regenerate failed: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = get_settings()
@@ -171,6 +219,9 @@ async def lifespan(_: FastAPI):
                 _cricsheet_update_loop(settings.cricsheet_check_interval_hours * 3600)
             )
         )
+
+    # Scheduled regenerate at 7:30 PM IST and 1:00 AM IST daily
+    tasks.append(asyncio.create_task(_scheduled_regenerate_loop()))
     try:
         yield
     finally:
