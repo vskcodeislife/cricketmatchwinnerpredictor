@@ -315,7 +315,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
     </div>
 
     <!-- Next match prediction (full width) -->
-    <div class="max-w-2xl mx-auto">
+    <div>
       {next_html}
     </div>
 
