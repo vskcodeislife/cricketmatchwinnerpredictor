@@ -17,10 +17,10 @@ from typing import TypedDict
 # IST = UTC+5:30
 _IST = timezone(timedelta(hours=5, minutes=30))
 
-# Match start hour mapping
-_TIME_HOURS = {
-    "3:00 PM IST": 15,
-    "7:30 PM IST": 19,
+# Match start time mapping (hour, minute) in IST
+_TIME_START = {
+    "3:00 PM IST": (15, 0),
+    "7:30 PM IST": (19, 30),
 }
 
 
@@ -221,6 +221,7 @@ class IPLScheduleProvider:
         now_ist = datetime.now(_IST)
         today_str = now_ist.date().isoformat()
         current_hour = now_ist.hour
+        current_minute = now_ist.minute
         upcoming: list[ScheduledMatch] = []
         for m in self._schedule:
             if m["team_a"].startswith("TBD"):
@@ -229,8 +230,8 @@ class IPLScheduleProvider:
                 upcoming.append(m)
             elif m["match_date"] == today_str:
                 # Include only if the match hasn't started yet
-                start_hour = _TIME_HOURS.get(m["match_time"], 19)
-                if current_hour < start_hour:
+                start_h, start_m = _TIME_START.get(m["match_time"], (19, 30))
+                if (current_hour, current_minute) < (start_h, start_m):
                     upcoming.append(m)
         return upcoming[0] if upcoming else None
 

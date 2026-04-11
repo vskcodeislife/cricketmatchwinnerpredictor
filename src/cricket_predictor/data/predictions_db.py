@@ -15,9 +15,16 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Generator
+
+# IST = UTC+5:30
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+def _ist_today_iso() -> str:
+    """Return today's date in IST as ISO string."""
+    return datetime.now(_IST).date().isoformat()
 
 
 _FEEDBACK_REQUIRED_COLUMNS = {
@@ -227,39 +234,43 @@ class PredictionsDB:
 
     def get_recent_predictions(self, limit: int = 10) -> list[dict]:
         """Return predictions for matches before today (completed dates), most recent first."""
+        today_ist = _ist_today_iso()
         with self._connect() as conn:
             rows = conn.execute(
                 """SELECT * FROM match_predictions
-                   WHERE match_date < date('now')
+                   WHERE match_date < ?
                    ORDER BY match_date DESC, created_at DESC LIMIT ?""",
-                (limit,),
+                (today_ist, limit),
             ).fetchall()
             return [dict(r) for r in rows]
 
     def get_paginated_predictions(self, page: int = 1, per_page: int = 10) -> tuple[list[dict], int]:
         """Return a page of past predictions and total count."""
+        today_ist = _ist_today_iso()
         offset = (page - 1) * per_page
         with self._connect() as conn:
             total = conn.execute(
-                "SELECT COUNT(*) FROM match_predictions WHERE match_date < date('now')"
+                "SELECT COUNT(*) FROM match_predictions WHERE match_date < ?",
+                (today_ist,),
             ).fetchone()[0]
             rows = conn.execute(
                 """SELECT * FROM match_predictions
-                   WHERE match_date < date('now')
+                   WHERE match_date < ?
                    ORDER BY match_date DESC, created_at DESC
                    LIMIT ? OFFSET ?""",
-                (per_page, offset),
+                (today_ist, per_page, offset),
             ).fetchall()
             return [dict(r) for r in rows], total
 
     def get_upcoming_predictions(self, limit: int = 7) -> list[dict]:
         """Return saved predictions for future matches (today and beyond)."""
+        today_ist = _ist_today_iso()
         with self._connect() as conn:
             rows = conn.execute(
                 """SELECT * FROM match_predictions
-                   WHERE match_date >= date('now')
+                   WHERE match_date >= ?
                    ORDER BY match_date ASC LIMIT ?""",
-                (limit,),
+                (today_ist, limit),
             ).fetchall()
             return [dict(r) for r in rows]
 

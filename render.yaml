@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: cricket-predictor-api
+    name: ipl-copilot
     env: python
     region: oregon
     plan: starter        # $7/mo — always on, required for background loops
