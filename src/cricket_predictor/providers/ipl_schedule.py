@@ -21,6 +21,7 @@ class ScheduledMatch(TypedDict):
     team_b: str
     venue: str
     match_date: str      # ISO-8601 date "YYYY-MM-DD"
+    match_time: str      # e.g. "3:00 PM IST" or "7:30 PM IST"
     is_complete: bool
     actual_winner: str | None
 
@@ -150,6 +151,11 @@ _RAW_FIXTURES: list[tuple[str, str, str, str]] = [
 
 
 def _build_schedule() -> list[ScheduledMatch]:
+    # Pre-scan to find dates with double-headers
+    from collections import Counter
+    date_counts = Counter(d for _, _, _, d in _RAW_FIXTURES)
+    date_seen: dict[str, int] = {}  # track which match on a given date
+
     matches: list[ScheduledMatch] = []
     for idx, (ta, tb, venue_city, match_date) in enumerate(_RAW_FIXTURES, start=1):
         # Resolve team names and venue
@@ -160,6 +166,14 @@ def _build_schedule() -> list[ScheduledMatch]:
             team_b = SHORT_TEAM.get(tb, tb)
             venue = _CITY_VENUE.get(venue_city, HOME_VENUE.get(team_a, venue_city))
 
+        # Assign match time: double-header → 1st at 3:00 PM, 2nd at 7:30 PM
+        occurrence = date_seen.get(match_date, 0) + 1
+        date_seen[match_date] = occurrence
+        if date_counts[match_date] >= 2 and occurrence == 1:
+            match_time = "3:00 PM IST"
+        else:
+            match_time = "7:30 PM IST"
+
         match_id = f"IPL2026_M{idx:02d}"
         today = date.today().isoformat()
         matches.append(
@@ -169,6 +183,7 @@ def _build_schedule() -> list[ScheduledMatch]:
                 team_b=team_b,
                 venue=venue,
                 match_date=match_date,
+                match_time=match_time,
                 is_complete=match_date < today,
                 actual_winner=None,
             )

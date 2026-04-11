@@ -64,6 +64,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
         team_b = next_pred.get("team_b", "TBA")
         venue = next_pred.get("venue", "TBA")
         match_date = next_pred.get("match_date", "")
+        match_time = next_pred.get("match_time", "7:30 PM IST")
         winner = next_pred.get("predicted_winner", "TBA")
         ta_pct = round(next_pred.get("team_a_probability", 0.5) * 100, 1)
         tb_pct = round(100 - ta_pct, 1)
@@ -81,7 +82,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
           <div class="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4">
             <div class="flex items-center justify-between">
               <span class="text-white font-semibold text-lg">🏏 Next Match Prediction</span>
-              <span class="bg-white/20 text-white text-sm px-3 py-1 rounded-full">{match_date}</span>
+              <span class="bg-white/20 text-white text-sm px-3 py-1 rounded-full">{match_date} · {match_time}</span>
             </div>
           </div>
           <div class="px-6 py-5">
@@ -146,7 +147,9 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
     # ── Upcoming match table ─────────────────────────────────
     from datetime import date
     today = date.today().isoformat()
-    future_matches = [m for m in upcoming if m.get("match_date", "") > today][:7]
+    # Include today's matches (>=) but exclude the featured next-match shown above
+    next_match_id = next_pred.get("match_id") if next_pred else None
+    future_matches = [m for m in upcoming if m.get("match_date", "") >= today and m.get("match_id") != next_match_id][:7]
 
     upcoming_rows = ""
     for idx, m in enumerate(future_matches):
@@ -154,6 +157,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
         u_tb = m.get("team_b", "")
         u_venue = m.get("venue", "")
         u_date = m.get("match_date", "")
+        u_time = m.get("match_time", "7:30 PM IST")
         u_winner = m.get("predicted_winner") or "—"
         u_ta_pct = round((m.get("team_a_probability") or 0.5) * 100, 1)
         u_tb_pct = round(100 - u_ta_pct, 1)
@@ -170,7 +174,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
             analysis_row = f'<tr id="ai-{idx}" class="hidden bg-purple-50/50"><td colspan="5" class="px-4 py-3 text-xs text-gray-600 leading-relaxed">{a_html}</td></tr>'
         upcoming_rows += f"""
         <tr class="border-b border-gray-100 hover:bg-gray-50 transition">
-          <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{u_date}</td>
+          <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{u_date}<br><span class="text-[10px] text-gray-400">{u_time}</span></td>
           <td class="px-4 py-3 text-sm font-medium text-gray-800 whitespace-nowrap">{u_ta} <span class="text-gray-400 font-normal">vs</span> {u_tb}{analysis_btn}</td>
           <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap hidden md:table-cell">{u_venue}</td>
           <td class="px-4 py-3">
@@ -189,7 +193,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
     <div class="bg-white rounded-2xl shadow border border-gray-100 overflow-hidden">
       <div class="px-6 py-4 border-b border-gray-100">
         <h2 class="font-semibold text-gray-700">📅 Upcoming Matches &amp; Predictions</h2>
-        <p class="text-xs text-gray-400 mt-0.5">Next 7 fixtures · pre-match win probability · 7:30 PM IST</p>
+        <p class="text-xs text-gray-400 mt-0.5">Next 7 fixtures · pre-match win probability</p>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-left">
