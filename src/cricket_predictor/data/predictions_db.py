@@ -233,29 +233,29 @@ class PredictionsDB:
             )
 
     def get_recent_predictions(self, limit: int = 10) -> list[dict]:
-        """Return predictions for matches before today (completed dates), most recent first."""
+        """Return resolved predictions (past dates OR today with result), most recent first."""
         today_ist = _ist_today_iso()
         with self._connect() as conn:
             rows = conn.execute(
                 """SELECT * FROM match_predictions
-                   WHERE match_date < ?
+                   WHERE match_date < ? OR actual_winner IS NOT NULL
                    ORDER BY match_date DESC, created_at DESC LIMIT ?""",
                 (today_ist, limit),
             ).fetchall()
             return [dict(r) for r in rows]
 
     def get_paginated_predictions(self, page: int = 1, per_page: int = 10) -> tuple[list[dict], int]:
-        """Return a page of past predictions and total count."""
+        """Return a page of past/resolved predictions and total count."""
         today_ist = _ist_today_iso()
         offset = (page - 1) * per_page
         with self._connect() as conn:
             total = conn.execute(
-                "SELECT COUNT(*) FROM match_predictions WHERE match_date < ?",
+                "SELECT COUNT(*) FROM match_predictions WHERE match_date < ? OR actual_winner IS NOT NULL",
                 (today_ist,),
             ).fetchone()[0]
             rows = conn.execute(
                 """SELECT * FROM match_predictions
-                   WHERE match_date < ?
+                   WHERE match_date < ? OR actual_winner IS NOT NULL
                    ORDER BY match_date DESC, created_at DESC
                    LIMIT ? OFFSET ?""",
                 (today_ist, per_page, offset),
@@ -263,12 +263,12 @@ class PredictionsDB:
             return [dict(r) for r in rows], total
 
     def get_upcoming_predictions(self, limit: int = 7) -> list[dict]:
-        """Return saved predictions for future matches (today and beyond)."""
+        """Return saved predictions for future matches (today and beyond), excluding resolved."""
         today_ist = _ist_today_iso()
         with self._connect() as conn:
             rows = conn.execute(
                 """SELECT * FROM match_predictions
-                   WHERE match_date >= ?
+                   WHERE match_date >= ? AND actual_winner IS NULL
                    ORDER BY match_date ASC LIMIT ?""",
                 (today_ist, limit),
             ).fetchall()
