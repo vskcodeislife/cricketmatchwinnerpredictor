@@ -229,9 +229,10 @@ class IPLScheduleProvider:
             if m["match_date"] > today_str:
                 upcoming.append(m)
             elif m["match_date"] == today_str:
-                # Include only if the match hasn't started yet
+                # Keep showing a match until ~4 hours after start (T20 duration)
                 start_h, start_m = _TIME_START.get(m["match_time"], (19, 30))
-                if (current_hour, current_minute) < (start_h, start_m):
+                end_h, end_m = start_h + 4, start_m
+                if (current_hour, current_minute) < (end_h, end_m):
                     upcoming.append(m)
         return upcoming[0] if upcoming else None
 
