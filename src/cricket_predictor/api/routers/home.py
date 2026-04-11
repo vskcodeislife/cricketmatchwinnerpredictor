@@ -385,14 +385,37 @@ async def homepage(page: int = 1) -> HTMLResponse:
     next_pred = tracker.get_next_match_prediction()
     history, total_history = tracker.get_paginated_history(page, per_page)
     stats = tracker.get_accuracy_stats()
-    upcoming = tracker._db.get_upcoming_predictions(7)
+    upcoming = tracker._db.get_upcoming_predictions(14)
     # Merge match_time from schedule into DB predictions
     schedule = tracker._schedule
     time_lookup = {m["match_id"]: m["match_time"] for m in schedule.all_matches()}
     for u in upcoming:
         if "match_time" not in u or not u.get("match_time"):
             u["match_time"] = time_lookup.get(u.get("match_id", ""), "7:30 PM IST")
-    html = _render_homepage(next_pred, history, stats, upcoming, page, per_page, total_history)
+
+    # Move today's started matches from upcoming into history as "Pending"
+    from datetime import datetime, timezone, timedelta
+    _IST_TZ = timezone(timedelta(hours=5, minutes=30))
+    _TS = {"3:00 PM IST": (15, 0), "7:30 PM IST": (19, 30)}
+    now_ist = datetime.now(_IST_TZ)
+    today_str = now_ist.date().isoformat()
+    started_today = []
+    still_upcoming = []
+    for u in upcoming:
+        m_date = u.get("match_date", "")
+        if m_date == today_str and u.get("actual_winner") is None:
+            sh, sm = _TS.get(u.get("match_time", "7:30 PM IST"), (19, 30))
+            if (now_ist.hour, now_ist.minute) >= (sh, sm):
+                started_today.append(u)
+                continue
+        still_upcoming.append(u)
+
+    # Prepend started-today matches to history (shown as Pending)
+    if page == 1 and started_today:
+        history = started_today + history
+        total_history += len(started_today)
+
+    html = _render_homepage(next_pred, history, stats, still_upcoming, page, per_page, total_history)
     return HTMLResponse(content=html)
 
 
