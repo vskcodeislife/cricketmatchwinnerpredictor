@@ -151,7 +151,7 @@ def _render_homepage(next_pred: dict | None, history: list[dict], stats: dict, u
     today = now_ist.date().isoformat()
     current_hour = now_ist.hour
     current_minute = now_ist.minute
-    _TIME_START = {"3:00 PM IST": (15, 0), "7:30 PM IST": (19, 30)}
+    _TIME_START = {"3:30 PM IST": (15, 30), "7:30 PM IST": (19, 30)}
 
     # Include today's matches (>=) but exclude the featured next-match shown above
     # and exclude matches whose start time has already passed today
@@ -396,7 +396,7 @@ async def homepage(page: int = 1) -> HTMLResponse:
     # Move today's started matches from upcoming into history as "Pending"
     from datetime import datetime, timezone, timedelta
     _IST_TZ = timezone(timedelta(hours=5, minutes=30))
-    _TS = {"3:00 PM IST": (15, 0), "7:30 PM IST": (19, 30)}
+    _TS = {"3:30 PM IST": (15, 30), "7:30 PM IST": (19, 30)}
     now_ist = datetime.now(_IST_TZ)
     today_str = now_ist.date().isoformat()
     started_today = []

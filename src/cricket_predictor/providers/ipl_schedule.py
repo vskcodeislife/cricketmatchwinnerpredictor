@@ -19,7 +19,7 @@ _IST = timezone(timedelta(hours=5, minutes=30))
 
 # Match start time mapping (hour, minute) in IST
 _TIME_START = {
-    "3:00 PM IST": (15, 0),
+    "3:30 PM IST": (15, 30),
     "7:30 PM IST": (19, 30),
 }
 
@@ -30,7 +30,7 @@ class ScheduledMatch(TypedDict):
     team_b: str
     venue: str
     match_date: str      # ISO-8601 date "YYYY-MM-DD"
-    match_time: str      # e.g. "3:00 PM IST" or "7:30 PM IST"
+    match_time: str      # e.g. "3:30 PM IST" or "7:30 PM IST"
     is_complete: bool
     actual_winner: str | None
 
@@ -79,6 +79,7 @@ _CITY_VENUE = {
     "Ahmedabad":       "Narendra Modi Stadium",
     "Jaipur":          "Sawai Mansingh Stadium",
     "Dharamshala":     "HPCA Stadium, Dharamshala",
+    "Raipur":          "Shaheed Veer Narayan Singh International Stadium",
 }
 
 # ---------------------------------------------------------------------------
@@ -89,7 +90,7 @@ _RAW_FIXTURES: list[tuple[str, str, str, str]] = [
     ("RCB", "SRH", "Bengaluru", "2026-03-28"),
     ("MI", "KKR", "Mumbai", "2026-03-29"),
     ("RR", "CSK", "Guwahati", "2026-03-30"),
-    ("PBKS", "GT", "Chandigarh", "2026-03-31"),
+    ("PBKS", "GT", "New Chandigarh", "2026-03-31"),
     ("LSG", "DC", "Lucknow", "2026-04-01"),
     ("KKR", "SRH", "Kolkata", "2026-04-02"),
     ("CSK", "PBKS", "Chennai", "2026-04-03"),
@@ -102,60 +103,60 @@ _RAW_FIXTURES: list[tuple[str, str, str, str]] = [
     ("DC", "GT", "Delhi", "2026-04-08"),
     ("KKR", "LSG", "Kolkata", "2026-04-09"),
     ("RR", "RCB", "Guwahati", "2026-04-10"),
-    ("PBKS", "SRH", "Chandigarh", "2026-04-11"),
+    ("PBKS", "SRH", "New Chandigarh", "2026-04-11"),
     ("CSK", "DC", "Chennai", "2026-04-11"),
     ("LSG", "GT", "Lucknow", "2026-04-12"),
     ("MI", "RCB", "Mumbai", "2026-04-12"),
-    ("SRH", "CSK", "Hyderabad", "2026-04-13"),
-    ("DC", "KKR", "Delhi", "2026-04-14"),
+    ("SRH", "RR", "Hyderabad", "2026-04-13"),
+    ("CSK", "KKR", "Chennai", "2026-04-14"),
     ("RCB", "LSG", "Bengaluru", "2026-04-15"),
-    ("GT", "MI", "Ahmedabad", "2026-04-16"),
-    ("PBKS", "RR", "Chandigarh", "2026-04-17"),
+    ("MI", "PBKS", "Mumbai", "2026-04-16"),
+    ("GT", "KKR", "Ahmedabad", "2026-04-17"),
     ("RCB", "DC", "Bengaluru", "2026-04-18"),
-    ("CSK", "LSG", "Chennai", "2026-04-18"),
-    ("MI", "SRH", "Mumbai", "2026-04-19"),
-    ("GT", "KKR", "Ahmedabad", "2026-04-19"),
-    ("RR", "DC", "Jaipur", "2026-04-20"),
-    ("LSG", "PBKS", "Lucknow", "2026-04-21"),
-    ("SRH", "GT", "Hyderabad", "2026-04-22"),
-    ("CSK", "MI", "Chennai", "2026-04-23"),
+    ("SRH", "CSK", "Hyderabad", "2026-04-18"),
+    ("KKR", "RR", "Kolkata", "2026-04-19"),
+    ("PBKS", "LSG", "New Chandigarh", "2026-04-19"),
+    ("GT", "MI", "Ahmedabad", "2026-04-20"),
+    ("SRH", "DC", "Hyderabad", "2026-04-21"),
+    ("LSG", "RR", "Lucknow", "2026-04-22"),
+    ("MI", "CSK", "Mumbai", "2026-04-23"),
     ("RCB", "GT", "Bengaluru", "2026-04-24"),
-    ("KKR", "RR", "Kolkata", "2026-04-25"),
-    ("PBKS", "DC", "Chandigarh", "2026-04-25"),
-    ("MI", "LSG", "Mumbai", "2026-04-26"),
-    ("SRH", "RCB", "Hyderabad", "2026-04-26"),
-    ("GT", "CSK", "Ahmedabad", "2026-04-27"),
-    ("RR", "KKR", "Jaipur", "2026-04-28"),
+    ("DC", "PBKS", "Delhi", "2026-04-25"),
+    ("RR", "SRH", "Jaipur", "2026-04-25"),
+    ("GT", "CSK", "Ahmedabad", "2026-04-26"),
+    ("LSG", "KKR", "Lucknow", "2026-04-26"),
+    ("DC", "RCB", "Delhi", "2026-04-27"),
+    ("PBKS", "RR", "New Chandigarh", "2026-04-28"),
     ("MI", "SRH", "Mumbai", "2026-04-29"),
     ("GT", "RCB", "Ahmedabad", "2026-04-30"),
-    ("DC", "CSK", "Delhi", "2026-05-01"),
-    ("PBKS", "MI", "Chandigarh", "2026-05-02"),
-    ("LSG", "RR", "Lucknow", "2026-05-03"),
-    ("KKR", "RCB", "Kolkata", "2026-05-03"),
-    ("SRH", "DC", "Hyderabad", "2026-05-04"),
-    ("CSK", "GT", "Chennai", "2026-05-05"),
-    ("MI", "RR", "Mumbai", "2026-05-06"),
-    ("PBKS", "LSG", "Chandigarh", "2026-05-07"),
-    ("RCB", "SRH", "Bengaluru", "2026-05-08"),
-    ("DC", "KKR", "Delhi", "2026-05-09"),
-    ("RR", "GT", "Jaipur", "2026-05-10"),
-    ("LSG", "CSK", "Lucknow", "2026-05-10"),
-    ("MI", "PBKS", "Mumbai", "2026-05-11"),
-    ("SRH", "KKR", "Hyderabad", "2026-05-12"),
-    ("GT", "DC", "Ahmedabad", "2026-05-13"),
-    ("CSK", "RR", "Chennai", "2026-05-14"),
-    ("RCB", "PBKS", "Bengaluru", "2026-05-15"),
-    ("KKR", "MI", "Kolkata", "2026-05-16"),
-    ("LSG", "SRH", "Lucknow", "2026-05-16"),
+    ("RR", "DC", "Jaipur", "2026-05-01"),
+    ("CSK", "MI", "Chennai", "2026-05-02"),
+    ("SRH", "KKR", "Hyderabad", "2026-05-03"),
+    ("GT", "PBKS", "Ahmedabad", "2026-05-03"),
+    ("MI", "LSG", "Mumbai", "2026-05-04"),
+    ("DC", "CSK", "Delhi", "2026-05-05"),
+    ("SRH", "PBKS", "Hyderabad", "2026-05-06"),
+    ("LSG", "RCB", "Lucknow", "2026-05-07"),
+    ("DC", "KKR", "Delhi", "2026-05-08"),
+    ("RR", "GT", "Jaipur", "2026-05-09"),
+    ("CSK", "LSG", "Chennai", "2026-05-10"),
+    ("RCB", "MI", "Raipur", "2026-05-10"),
+    ("PBKS", "DC", "Dharamshala", "2026-05-11"),
+    ("GT", "SRH", "Ahmedabad", "2026-05-12"),
+    ("RCB", "KKR", "Raipur", "2026-05-13"),
+    ("PBKS", "MI", "Dharamshala", "2026-05-14"),
+    ("LSG", "CSK", "Lucknow", "2026-05-15"),
+    ("KKR", "GT", "Kolkata", "2026-05-16"),
+    ("PBKS", "RCB", "Dharamshala", "2026-05-17"),
     ("DC", "RR", "Delhi", "2026-05-17"),
-    ("GT", "PBKS", "Ahmedabad", "2026-05-17"),
-    ("CSK", "KKR", "Chennai", "2026-05-18"),
-    ("RCB", "MI", "Bengaluru", "2026-05-19"),
-    ("SRH", "RR", "Hyderabad", "2026-05-20"),
-    ("PBKS", "CSK", "Chandigarh", "2026-05-21"),
-    ("MI", "GT", "Mumbai", "2026-05-22"),
-    ("KKR", "DC", "Kolkata", "2026-05-23"),
-    ("RR", "LSG", "Jaipur", "2026-05-24"),
+    ("CSK", "SRH", "Chennai", "2026-05-18"),
+    ("RR", "LSG", "Jaipur", "2026-05-19"),
+    ("KKR", "MI", "Kolkata", "2026-05-20"),
+    ("CSK", "GT", "Chennai", "2026-05-21"),
+    ("SRH", "RCB", "Hyderabad", "2026-05-22"),
+    ("LSG", "PBKS", "Lucknow", "2026-05-23"),
+    ("MI", "RR", "Mumbai", "2026-05-24"),
+    ("KKR", "DC", "Kolkata", "2026-05-24"),
 ]
 
 
@@ -175,11 +176,11 @@ def _build_schedule() -> list[ScheduledMatch]:
             team_b = SHORT_TEAM.get(tb, tb)
             venue = _CITY_VENUE.get(venue_city, HOME_VENUE.get(team_a, venue_city))
 
-        # Assign match time: double-header → 1st at 3:00 PM, 2nd at 7:30 PM
+        # Assign match time: double-header → 1st at 3:30 PM, 2nd at 7:30 PM
         occurrence = date_seen.get(match_date, 0) + 1
         date_seen[match_date] = occurrence
         if date_counts[match_date] >= 2 and occurrence == 1:
-            match_time = "3:00 PM IST"
+            match_time = "3:30 PM IST"
         else:
             match_time = "7:30 PM IST"
 
