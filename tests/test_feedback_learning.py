@@ -231,6 +231,8 @@ def test_local_retrain_backfills_cap_table_signals_for_legacy_feedback(monkeypat
 
     monkeypatch.setattr("cricket_predictor.services.data_update_service.train_all", fake_train_all)
     monkeypatch.setattr("cricket_predictor.services.data_update_service.save_artifacts", lambda *args: None)
+    # Disable iplt20 live feed so the test exercises the CSV fallback path
+    monkeypatch.setattr("cricket_predictor.providers.iplt20_stats_provider.fetch_team_leader_stats", lambda *a, **kw: None)
 
     assert service.retrain_from_local_data() is True
 

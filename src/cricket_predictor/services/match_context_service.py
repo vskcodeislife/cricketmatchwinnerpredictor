@@ -7,6 +7,7 @@ from cricket_predictor.api.schemas import MatchPredictionRequest
 from cricket_predictor.config.settings import Settings, get_settings
 from cricket_predictor.providers.cricinfo_standings import resolve_team_name, venue_advantage
 from cricket_predictor.providers.ipl_csv_provider import IplCsvDataProvider, TeamLeaderStats, TeamMetrics
+from cricket_predictor.providers.iplt20_stats_provider import fetch_team_leader_stats
 from cricket_predictor.providers.match_history_provider import MatchHistoryProvider
 from cricket_predictor.services.standings_service import get_standings_service
 
@@ -96,10 +97,15 @@ class MatchContextService:
         team_a_leaders = TeamLeaderStats()
         team_b_leaders = TeamLeaderStats()
 
+        # --- Leader stats: iplt20.com S3 feeds first, Kaggle CSV fallback ---
+        iplt20_leaders = fetch_team_leader_stats(self._settings.iplt20_stats_competition_id)
+        if iplt20_leaders:
+            team_a_leaders = iplt20_leaders.get(team_a, team_a_leaders)
+            team_b_leaders = iplt20_leaders.get(team_b, team_b_leaders)
+
         if self._settings.ipl_csv_data_dir:
             csv_provider = IplCsvDataProvider(self._settings.ipl_csv_data_dir)
             metrics = csv_provider.team_metrics_lookup()
-            leaders = csv_provider.team_leader_stats_lookup()
             team_a_metrics = metrics.get(team_a)
             team_b_metrics = metrics.get(team_b)
             if team_a_metrics is not None:
@@ -115,8 +121,11 @@ class MatchContextService:
             if head_to_head == 0.5 and csv_h2h != 0.5:
                 head_to_head = csv_h2h
 
-            team_a_leaders = leaders.get(team_a, TeamLeaderStats())
-            team_b_leaders = leaders.get(team_b, TeamLeaderStats())
+            # Fall back to Kaggle CSV leaders only when iplt20 feeds failed
+            if not iplt20_leaders:
+                csv_leaders = csv_provider.team_leader_stats_lookup()
+                team_a_leaders = csv_leaders.get(team_a, team_a_leaders)
+                team_b_leaders = csv_leaders.get(team_b, team_b_leaders)
 
         return MatchContextSignals(
             team_a_recent_form=team_a_recent_form,

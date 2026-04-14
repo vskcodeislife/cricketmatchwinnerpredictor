@@ -138,10 +138,15 @@ class DataUpdateService:
         return augmented, len(feedback_df)
 
     def _backfill_feedback_leader_signals(self, feedback_df: pd.DataFrame) -> pd.DataFrame:
-        if feedback_df.empty or not self._settings.ipl_csv_data_dir:
+        if feedback_df.empty:
             return feedback_df
 
-        leader_lookup = IplCsvDataProvider(self._settings.ipl_csv_data_dir).team_leader_stats_lookup()
+        # Prefer live iplt20 S3 feeds; fall back to Kaggle CSV
+        from cricket_predictor.providers.iplt20_stats_provider import fetch_team_leader_stats
+
+        leader_lookup = fetch_team_leader_stats(self._settings.iplt20_stats_competition_id)
+        if not leader_lookup and self._settings.ipl_csv_data_dir:
+            leader_lookup = IplCsvDataProvider(self._settings.ipl_csv_data_dir).team_leader_stats_lookup()
         if not leader_lookup:
             return feedback_df
 

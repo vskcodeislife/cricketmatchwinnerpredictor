@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     enable_standings_refresh: bool = True
     standings_refresh_minutes: int = Field(default=30, ge=5)
 
+    # --- iplt20.com S3 stats feeds (Orange/Purple Cap) ---
+    iplt20_stats_competition_id: str = "284"  # 284 = IPL 2026
+
     # --- In-process live predictions ---
     live_provider: str = "mock"
     live_refresh_seconds: int = Field(default=60, ge=15)
