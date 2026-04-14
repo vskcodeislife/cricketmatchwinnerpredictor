@@ -142,6 +142,8 @@ def normalise(input_path: Path, output_dir: Path) -> dict[str, int]:
 
     for row in rows:
         mid = _get(row, "match_id")
+        if not mid:
+            continue
         innings_raw = _get(row, "innings")
         innings_num = re.sub(r"[^0-9]", "", innings_raw) or "1"
         bat_team = _expand_team(_get(row, "batting_team"))
@@ -225,7 +227,7 @@ def normalise(input_path: Path, output_dir: Path) -> dict[str, int]:
     team_losses: dict[str, int] = defaultdict(int)
     team_form: dict[str, list[str]] = defaultdict(list)
 
-    for mid in sorted(matches, key=lambda k: int(k)):
+    for mid in sorted(matches, key=lambda k: (int(k) if k.isdigit() else k)):
         m = matches[mid]
         innings = m["innings"]
         if len(innings) < 2:
