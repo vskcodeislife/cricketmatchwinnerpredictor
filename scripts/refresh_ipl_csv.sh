@@ -62,8 +62,8 @@ import sys
 
 extract_dir = Path(sys.argv[1])
 target_dir = Path(sys.argv[2])
-required = {"matches.csv", "points_table.csv", "orange_cap.csv", "purple_cap.csv", "squads.csv"}
-optional = {"deliveries.csv", "venues.csv"}
+required = {"matches.csv", "points_table.csv", "squads.csv"}
+optional = {"deliveries.csv", "venues.csv", "orange_cap.csv", "purple_cap.csv", "batting_stats.csv", "bowling_stats.csv"}
 
 found: dict[str, Path] = {}
 for path in extract_dir.rglob("*.csv"):

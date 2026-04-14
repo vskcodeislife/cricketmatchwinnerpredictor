@@ -28,7 +28,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 _ALIASES: dict[str, tuple[str, ...]] = {
-    "match_id": ("match_id", "matchid", "id"),
+    "match_id": ("match_id", "matchid", "id", "match_no"),
     "match_name": ("match_name", "matchname", "fixture", "match"),
     "date": ("date", "match_date", "start_date"),
     "innings": ("innings", "inning", "innings_no"),
@@ -36,12 +36,12 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "bowling_team": ("bowling_team", "bowlingteam", "bowl_team"),
     "batter": ("batter", "batsman", "striker"),
     "bowler": ("bowler",),
-    "run": ("run", "runs", "batsman_runs", "batter_runs"),
+    "run": ("run", "runs", "batsman_runs", "batter_runs", "runs_of_bat", "runs_off_bat"),
     "ball": ("ball", "ball_no", "ball_number"),
     "extras": ("extras", "extra_runs", "extra"),
     "boundary": ("boundary", "is_boundary"),
     "over": ("over", "overs"),
-    "wicket": ("wicket", "is_wicket", "wickets"),
+    "wicket": ("wicket", "is_wicket", "wickets", "wicket_type"),
     "total_runs": ("total_runs", "totalrun", "cumulative_runs", "total"),
 }
 
