@@ -154,65 +154,79 @@ async def _scheduled_regenerate_loop() -> None:
 async def lifespan(_: FastAPI):
     settings = get_settings()
     tasks: list[asyncio.Task] = []
-    standings_loaded = False
 
-    # Standings — always try on startup so first prediction is accurate
-    if settings.enable_standings_refresh:
+    # --- Bind port FIRST, then initialize in background ---
+    # Render requires a port within ~5 minutes; defer all heavy I/O.
+    async def _deferred_startup() -> None:
+        standings_loaded = False
+
+        # Standings — try once on startup so first prediction is accurate
+        if settings.enable_standings_refresh:
+            try:
+                from cricket_predictor.services.standings_service import get_standings_service
+                await get_standings_service().refresh()
+                standings_loaded = True
+                log.info("Initial standings loaded.")
+            except Exception as exc:
+                log.warning("Initial standings fetch failed (will retry): %s", exc)
+
+        # Prediction tracker — make pre-match predictions + check results
         try:
-            from cricket_predictor.services.standings_service import get_standings_service
-            await get_standings_service().refresh()
-            standings_loaded = True
-            log.info("Initial standings loaded.")
+            from cricket_predictor.services.prediction_tracker import get_prediction_tracker
+            tracker = get_prediction_tracker()
+
+            try:
+                count = tracker.refresh_injury_overrides()
+                log.info("Initial injury report: %d overrides applied.", count)
+            except Exception as exc:
+                log.warning("Initial injury report fetch failed: %s", exc)
+
+            if standings_loaded:
+                await asyncio.to_thread(tracker.rebuild_upcoming_predictions)
+                log.info("Upcoming match predictions rebuilt from refreshed standings.")
+            else:
+                await asyncio.to_thread(tracker.predict_upcoming_matches)
+                log.info("Initial upcoming match predictions saved.")
         except Exception as exc:
-            log.warning("Initial standings fetch failed (will retry): %s", exc)
+            log.warning("Initial prediction tracker run failed: %s", exc)
+
+        if settings.enable_ipl_csv_refresh and settings.ipl_csv_data_dir:
+            try:
+                from cricket_predictor.services.ipl_csv_refresh_service import get_ipl_csv_refresh_service
+                await get_ipl_csv_refresh_service().refresh_once()
+            except Exception as exc:
+                log.warning("Initial IPL CSV refresh failed (will retry): %s", exc)
+
+        if settings.enable_live_updates:
+            try:
+                await get_prediction_service().refresh_live_predictions()
+            except Exception as exc:
+                log.warning("Initial live prediction refresh failed: %s", exc)
+
+        gc.collect()
+        log.info("Deferred startup complete.")
+
+    # Launch deferred startup as a background task so the port binds immediately
+    tasks.append(asyncio.create_task(_deferred_startup()))
+
+    # Schedule recurring background loops
+    if settings.enable_standings_refresh:
         tasks.append(
             asyncio.create_task(
                 _standings_refresh_loop(settings.standings_refresh_minutes * 60)
             )
         )
-
-    # Prediction tracker — make pre-match predictions + check results hourly
-    try:
-        from cricket_predictor.services.prediction_tracker import get_prediction_tracker
-        tracker = get_prediction_tracker()
-
-        # Fetch injury report from crictracker on startup
-        try:
-            count = tracker.refresh_injury_overrides()
-            log.info("Initial injury report: %d overrides applied.", count)
-        except Exception as exc:
-            log.warning("Initial injury report fetch failed: %s", exc)
-
-        if standings_loaded:
-            await asyncio.to_thread(tracker.rebuild_upcoming_predictions)
-            log.info("Upcoming match predictions rebuilt from refreshed standings.")
-        else:
-            await asyncio.to_thread(tracker.predict_upcoming_matches)
-            log.info("Initial upcoming match predictions saved.")
-    except Exception as exc:
-        log.warning("Initial prediction tracker run failed: %s", exc)
     tasks.append(
         asyncio.create_task(_prediction_tracker_loop(settings.tracker_interval_seconds))
     )
-
-    # Daily injury report refresh (every 12 hours)
     tasks.append(
         asyncio.create_task(_injury_refresh_loop(12 * 3600))
     )
-
     if settings.enable_ipl_csv_refresh and settings.ipl_csv_data_dir:
-        try:
-            from cricket_predictor.services.ipl_csv_refresh_service import get_ipl_csv_refresh_service
-
-            await get_ipl_csv_refresh_service().refresh_once()
-        except Exception as exc:
-            log.warning("Initial IPL CSV refresh failed (will retry): %s", exc)
         tasks.append(
             asyncio.create_task(_ipl_csv_refresh_loop(settings.ipl_csv_refresh_hours * 3600))
         )
-
     if settings.enable_live_updates:
-        await get_prediction_service().refresh_live_predictions()
         tasks.append(asyncio.create_task(_live_refresh_loop(settings.live_refresh_seconds)))
     if settings.enable_cricsheet_updates:
         tasks.append(
@@ -220,12 +234,7 @@ async def lifespan(_: FastAPI):
                 _cricsheet_update_loop(settings.cricsheet_check_interval_hours * 3600)
             )
         )
-
-    # Scheduled regenerate at 7:30 PM IST and 1:00 AM IST daily
     tasks.append(asyncio.create_task(_scheduled_regenerate_loop()))
-
-    # Free temporary startup memory
-    gc.collect()
 
     try:
         yield
