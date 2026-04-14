@@ -7,6 +7,7 @@ import joblib
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestRegressor
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.pipeline import Pipeline
@@ -78,9 +79,13 @@ class TrainedArtifacts:
 
 
 def _match_preprocessor() -> ColumnTransformer:
+    numeric_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler()),
+    ])
     return ColumnTransformer(
         transformers=[
-            ("num", StandardScaler(), MATCH_NUMERIC_COLUMNS),
+            ("num", numeric_pipeline, MATCH_NUMERIC_COLUMNS),
             (
                 "cat",
                 OneHotEncoder(handle_unknown="ignore"),
@@ -91,9 +96,13 @@ def _match_preprocessor() -> ColumnTransformer:
 
 
 def _player_preprocessor() -> ColumnTransformer:
+    numeric_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler()),
+    ])
     return ColumnTransformer(
         transformers=[
-            ("num", StandardScaler(), PLAYER_NUMERIC_COLUMNS),
+            ("num", numeric_pipeline, PLAYER_NUMERIC_COLUMNS),
             (
                 "cat",
                 OneHotEncoder(handle_unknown="ignore"),
