@@ -46,6 +46,8 @@ services:
         value: https://your-resource.cognitiveservices.azure.com
       - key: CRICKET_PREDICTOR_AZURE_OPENAI_DEPLOYMENT
         value: gpt-4.1
+      - key: MALLOC_TRIM_THRESHOLD_
+        value: "0"
     disk:
       name: cricket-predictor-data
       mountPath: /app/data

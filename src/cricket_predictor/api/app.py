@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import gc
 import logging
 from contextlib import asynccontextmanager
 
@@ -222,6 +223,10 @@ async def lifespan(_: FastAPI):
 
     # Scheduled regenerate at 7:30 PM IST and 1:00 AM IST daily
     tasks.append(asyncio.create_task(_scheduled_regenerate_loop()))
+
+    # Free temporary startup memory
+    gc.collect()
+
     try:
         yield
     finally:

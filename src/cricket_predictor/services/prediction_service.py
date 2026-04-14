@@ -29,9 +29,15 @@ class PredictionService:
             datasets = save_synthetic_datasets(settings.synthetic_data_dir)
             save_artifacts(train_all(datasets.matches, datasets.players), settings.model_artifact_dir)
         self._match_model = load_match_model(settings.model_artifact_dir)
-        self._player_model = load_player_model(settings.model_artifact_dir)
+        self._player_model_cache = None  # lazy-loaded to reduce startup memory
         self._refresh_service = LiveRefreshService(build_live_provider(settings))
         self._live_predictions: list[dict] = []
+
+    @property
+    def _player_model(self):
+        if self._player_model_cache is None:
+            self._player_model_cache = load_player_model(self._settings.model_artifact_dir)
+        return self._player_model_cache
 
     async def refresh_live_data(self) -> list[dict]:
         return await self._refresh_service.refresh()
@@ -184,7 +190,7 @@ class PredictionService:
     def reload_models(self) -> None:
         """Hot-reload model artifacts from disk after a retrain."""
         self._match_model = load_match_model(self._settings.model_artifact_dir)
-        self._player_model = load_player_model(self._settings.model_artifact_dir)
+        self._player_model_cache = None  # will lazy-load on next access
         log.info("Prediction models reloaded from %s", self._settings.model_artifact_dir)
 
 
