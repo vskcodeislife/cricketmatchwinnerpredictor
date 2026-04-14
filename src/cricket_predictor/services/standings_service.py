@@ -17,12 +17,14 @@ from cricket_predictor.providers.cricinfo_standings import (
     build_recent_results_lookup,
     resolve_team_name,
 )
+from cricket_predictor.providers.iplt20_stats_provider import fetch_standings
 
 log = logging.getLogger(__name__)
 
 
 class StandingsService:
     def __init__(self, settings: Settings) -> None:
+        self._settings = settings
         self._provider = CricinfoStandingsProvider(settings.cricinfo_standings_url)
         self._cache: dict[str, TeamStanding] = {}
         self._recent_results: dict[tuple[str, str, str], str] = {}
@@ -33,13 +35,25 @@ class StandingsService:
     # ------------------------------------------------------------------
 
     async def refresh(self) -> dict[str, TeamStanding]:
-        """Fetch fresh standings in a thread pool and update the cache."""
-        standings, recent_results = await asyncio.to_thread(self._provider.fetch_snapshot)
-        self._cache = {s.team: s for s in standings}
-        self._recent_results = build_recent_results_lookup(recent_results)
+        """Fetch fresh standings — iplt20 S3 first, Delhi Capitals fallback."""
+        # Primary: iplt20.com S3 feed (lightweight, always up-to-date)
+        standings = await asyncio.to_thread(
+            fetch_standings, self._settings.iplt20_stats_competition_id
+        )
         if standings:
+            self._cache = {s.team: s for s in standings}
             self._fetched_at = standings[0].fetched_at
-            log.info("Standings refreshed for %d teams.", len(standings))
+            log.info("Standings refreshed from iplt20 S3 feed (%d teams).", len(standings))
+            return self._cache
+
+        # Fallback: scrape Delhi Capitals / Cricbuzz page
+        log.info("iplt20 standings unavailable — falling back to Cricbuzz scraper.")
+        fallback_standings, recent_results = await asyncio.to_thread(self._provider.fetch_snapshot)
+        self._cache = {s.team: s for s in fallback_standings}
+        self._recent_results = build_recent_results_lookup(recent_results)
+        if fallback_standings:
+            self._fetched_at = fallback_standings[0].fetched_at
+            log.info("Standings refreshed from Cricbuzz scraper (%d teams).", len(fallback_standings))
         return self._cache
 
     def get(self) -> dict[str, TeamStanding]:

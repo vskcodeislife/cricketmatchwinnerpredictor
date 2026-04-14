@@ -1,8 +1,9 @@
-"""Fetch live Orange Cap / Purple Cap data from the iplt20.com S3 JSONP feeds.
+"""Fetch live IPL data from the iplt20.com S3 JSONP feeds.
 
 The official IPL stats site uses JSONP endpoints backed by S3:
   - ``284-toprunsscorers.js``  → Orange Cap (most runs)
   - ``284-mostwickets.js``     → Purple Cap (most wickets)
+  - ``284-groupstandings.js``  → Points table / group standings
 
 ``284`` is the IPL 2026 competition ID.  The data is refreshed after every
 match by Sports Mechanic and requires no authentication — only a ``Referer``
@@ -19,7 +20,12 @@ from collections import defaultdict
 import httpx
 import truststore
 
-from cricket_predictor.providers.cricinfo_standings import resolve_team_name
+from cricket_predictor.providers.cricinfo_standings import (
+    RecentMatchResult,
+    TeamStanding,
+    resolve_team_name,
+    short_code,
+)
 from cricket_predictor.providers.ipl_csv_provider import TeamLeaderStats
 
 log = logging.getLogger(__name__)
@@ -104,3 +110,91 @@ def fetch_team_leader_stats(competition_id: str = "284") -> dict[str, TeamLeader
         sum(team_wicket_count.values()),
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Standings (Points Table)
+# ---------------------------------------------------------------------------
+
+def _derive_strength(total_runs: float, overs: float, matches: int, *, is_batting: bool) -> float:
+    """Convert total runs / overs into a 40–90 strength score.
+
+    Uses the same T20 calibration as ``cricinfo_standings.py``:
+      batting:  avg runs per innings 100→40, 230→90
+      bowling:  avg runs conceded per innings 100→90 (good), 230→40 (bad)
+    """
+    if matches <= 0 or overs <= 0:
+        return 65.0
+    avg_per_innings = total_runs / matches
+    avg_per_innings = max(100.0, min(230.0, avg_per_innings))
+    if is_batting:
+        return round(40.0 + (avg_per_innings - 100.0) / 130.0 * 50.0, 2)
+    return round(40.0 + (230.0 - avg_per_innings) / 130.0 * 50.0, 2)
+
+
+def _parse_runs_overs(value: str) -> tuple[float, float]:
+    """Parse ``'849/81.1'`` into ``(849.0, 81.1)``."""
+    parts = value.split("/")
+    if len(parts) != 2:
+        return 0.0, 0.0
+    try:
+        return float(parts[0]), float(parts[1])
+    except ValueError:
+        return 0.0, 0.0
+
+
+def _form_pct(performance: str) -> float:
+    """Convert ``'W,W,L,W'`` to a win-rate float."""
+    results = [r.strip() for r in performance.split(",") if r.strip()]
+    if not results:
+        return 0.5
+    wins = sum(1 for r in results if r == "W")
+    decided = sum(1 for r in results if r in ("W", "L"))
+    return wins / decided if decided else 0.5
+
+
+def fetch_standings(
+    competition_id: str = "284",
+) -> list[TeamStanding] | None:
+    """Return standings from the iplt20.com S3 feed, or ``None`` on failure."""
+    data = _fetch_jsonp(f"{competition_id}-groupstandings.js")
+    if data is None:
+        return None
+
+    entries = data.get("points", [])
+    if not entries:
+        return None
+
+    standings: list[TeamStanding] = []
+    for entry in entries:
+        team = resolve_team_name(entry.get("TeamName", ""))
+        if not team:
+            continue
+
+        matches = int(entry.get("Matches", 0))
+        for_runs, for_overs = _parse_runs_overs(entry.get("ForTeams", "0/0"))
+        against_runs, against_overs = _parse_runs_overs(entry.get("AgainstTeam", "0/0"))
+        performance = entry.get("Performance", "")
+
+        standings.append(
+            TeamStanding(
+                team=team,
+                short=short_code(team),
+                position=int(entry.get("OrderNo", 0)),
+                played=matches,
+                won=int(entry.get("Wins", 0)),
+                lost=int(entry.get("Loss", 0)),
+                tied=int(entry.get("Tied", 0)),
+                no_result=int(entry.get("NoResult", 0)),
+                points=int(entry.get("Points", 0)),
+                nrr=float(entry.get("NetRunRate", 0)),
+                recent_form_str=performance.replace(",", " "),
+                recent_form_pct=_form_pct(performance),
+                batting_strength=_derive_strength(for_runs, for_overs, matches, is_batting=True),
+                bowling_strength=_derive_strength(against_runs, against_overs, matches, is_batting=False),
+            )
+        )
+
+    standings.sort(key=lambda s: s.position)
+    log.info("iplt20 standings: loaded %d teams.", len(standings))
+    return standings

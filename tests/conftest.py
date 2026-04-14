@@ -10,3 +10,7 @@ def _disable_iplt20_stats(monkeypatch):
         "cricket_predictor.providers.iplt20_stats_provider.fetch_team_leader_stats",
         lambda *a, **kw: None,
     )
+    monkeypatch.setattr(
+        "cricket_predictor.providers.iplt20_stats_provider.fetch_standings",
+        lambda *a, **kw: None,
+    )
