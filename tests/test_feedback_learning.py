@@ -290,6 +290,53 @@ def test_tracker_retrains_after_enough_completed_predictions(monkeypatch, tmp_pa
     assert retrain_calls["count"] == 1
 
 
+def test_accuracy_stats_recompute_wrong_since_from_prediction_rows(tmp_path) -> None:
+    db = PredictionsDB(tmp_path / "predictions.db")
+    snapshot = _feature_snapshot()
+
+    db.save_prediction(
+        match_id="w1",
+        team_a="Chennai Super Kings",
+        team_b="Mumbai Indians",
+        venue="MA Chidambaram Stadium",
+        match_date="2026-04-05",
+        predicted_winner="Mumbai Indians",
+        team_a_probability=0.42,
+        team_b_probability=0.58,
+        confidence_score=0.16,
+        explanation="test",
+        ai_analysis="",
+        feature_snapshot=snapshot,
+    )
+    db.record_result("w1", "Chennai Super Kings")
+
+    db.save_prediction(
+        match_id="w2",
+        team_a="Delhi Capitals",
+        team_b="Rajasthan Royals",
+        venue="Arun Jaitley Stadium",
+        match_date="2026-04-06",
+        predicted_winner="Delhi Capitals",
+        team_a_probability=0.61,
+        team_b_probability=0.39,
+        confidence_score=0.22,
+        explanation="test",
+        ai_analysis="",
+        feature_snapshot=snapshot | {"team_a": "Delhi Capitals", "team_b": "Rajasthan Royals"},
+    )
+    db.record_result("w2", "Delhi Capitals")
+
+    # Simulate stale metadata from a prior bug where the running counter drifted.
+    with db._connect() as conn:  # noqa: SLF001 - intentional white-box regression setup
+        conn.execute("UPDATE model_accuracy SET wrong_since_last_retrain = 39 WHERE id = 1")
+
+    stats = db.get_accuracy_stats()
+    assert stats["total"] == 2
+    assert stats["correct"] == 1
+    assert stats["wrong_since_retrain"] == 1
+    assert stats["wrong_since_retrain"] <= stats["total"]
+
+
 def test_points_table_parser_extracts_recent_results_without_duplicates(monkeypatch) -> None:
         provider = CricinfoStandingsProvider("https://example.com/points-table")
         html = """

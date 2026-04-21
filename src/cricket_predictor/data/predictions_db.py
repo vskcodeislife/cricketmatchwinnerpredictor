@@ -384,9 +384,25 @@ class PredictionsDB:
             total = agg["total"] or 0
             correct = agg["correct"] or 0
 
-            meta = conn.execute("SELECT wrong_since_last_retrain, last_retrain_at FROM model_accuracy WHERE id = 1").fetchone()
-            wrong_since = meta["wrong_since_last_retrain"] if meta else 0
+            meta = conn.execute("SELECT last_retrain_at FROM model_accuracy WHERE id = 1").fetchone()
             last_retrain = meta["last_retrain_at"] if meta else None
+
+            # Derive "wrong since retrain" from match rows so the number cannot
+            # drift from total/correct counters in older DBs.
+            if last_retrain:
+                wrong_row = conn.execute(
+                    """SELECT COUNT(*) AS wrong
+                       FROM match_predictions
+                       WHERE is_correct = 0 AND resolved_at IS NOT NULL AND resolved_at > ?""",
+                    (last_retrain,),
+                ).fetchone()
+            else:
+                wrong_row = conn.execute(
+                    """SELECT COUNT(*) AS wrong
+                       FROM match_predictions
+                       WHERE is_correct = 0"""
+                ).fetchone()
+            wrong_since = int(wrong_row["wrong"] if wrong_row else 0)
 
             return {
                 "total": total,
