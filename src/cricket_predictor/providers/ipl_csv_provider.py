@@ -151,6 +151,12 @@ def _scale_bowling(avg_runs: float) -> float:
 class IplCsvDataProvider(LiveDataProvider):
     def __init__(self, dataset_dir: str | Path) -> None:
         self._dataset_dir = Path(dataset_dir)
+        self._csv_cache: dict[str, tuple[float | None, pd.DataFrame]] = {}
+        self._team_metrics_cache: dict[str, TeamMetrics] | None = None
+        self._team_leader_stats_cache: dict[str, TeamLeaderStats] | None = None
+        self._team_leader_names_cache: dict[str, TeamLeaderNames] | None = None
+        self._results_lookup_cache: dict[tuple[str, str, str], str] | None = None
+        self._head_to_head_cache: dict[tuple[str, str], list[str]] | None = None
 
     async def fetch_live_match_context(self) -> list[dict[str, Any]]:
         matches = self._load_csv("matches.csv")
@@ -224,10 +230,15 @@ class IplCsvDataProvider(LiveDataProvider):
         return contexts
 
     def team_metrics_lookup(self) -> dict[str, TeamMetrics]:
+        if self._team_metrics_cache is not None:
+            return self._team_metrics_cache
+
         matches = self._load_csv("matches.csv")
         if matches.empty:
-            return {}
-        return self._build_team_metrics(matches)
+            self._team_metrics_cache = {}
+        else:
+            self._team_metrics_cache = self._build_team_metrics(matches)
+        return self._team_metrics_cache
 
     def team_squad_lookup(self) -> dict[str, list[str]]:
         squads = self._load_csv("squads.csv")
@@ -252,47 +263,62 @@ class IplCsvDataProvider(LiveDataProvider):
         return dict(squads_by_team)
 
     def team_leader_stats_lookup(self) -> dict[str, TeamLeaderStats]:
+        if self._team_leader_stats_cache is not None:
+            return self._team_leader_stats_cache
+
         cap_leaders = self._build_team_leader_stats_from_caps(
             orange_cap=self._load_csv("orange_cap.csv"),
             purple_cap=self._load_csv("purple_cap.csv"),
             squads=self._load_csv("squads.csv"),
         )
         delivery_leaders = self._build_team_leader_stats(self._load_csv("deliveries.csv"))
-        return self._merge_team_leader_stats(cap_leaders, delivery_leaders)
+        self._team_leader_stats_cache = self._merge_team_leader_stats(cap_leaders, delivery_leaders)
+        return self._team_leader_stats_cache
 
     def team_leader_names_lookup(self) -> dict[str, TeamLeaderNames]:
+        if self._team_leader_names_cache is not None:
+            return self._team_leader_names_cache
+
         squads = self._load_csv("squads.csv")
         if squads.empty:
-            return {}
+            self._team_leader_names_cache = {}
+            return self._team_leader_names_cache
+
         player_teams = self._build_player_team_lookup(squads)
-        return self._build_team_leader_names_from_caps(
+        self._team_leader_names_cache = self._build_team_leader_names_from_caps(
             orange_cap=self._load_csv("orange_cap.csv"),
             purple_cap=self._load_csv("purple_cap.csv"),
             player_teams=player_teams,
         )
+        return self._team_leader_names_cache
 
     def head_to_head_pct(self, team_a: str, team_b: str, limit: int = 7) -> float:
-        matches = self._load_csv("matches.csv")
-        if matches.empty:
+        head_to_head_lookup = self._head_to_head_lookup()
+        if not head_to_head_lookup:
             return 0.5
         return self._head_to_head_pct(
-            self._build_head_to_head_lookup(matches),
+            head_to_head_lookup,
             resolve_team_name(team_a),
             resolve_team_name(team_b),
             limit=limit,
         )
 
     def fetch_results_lookup(self) -> dict[tuple[str, str, str], str]:
+        if self._results_lookup_cache is not None:
+            return self._results_lookup_cache
+
         matches = self._load_csv("matches.csv")
         if matches.empty:
-            return {}
+            self._results_lookup_cache = {}
+            return self._results_lookup_cache
 
         team_a_col = _first_existing(matches, _TEAM_A_COLUMNS)
         team_b_col = _first_existing(matches, _TEAM_B_COLUMNS)
         date_col = _first_existing(matches, _MATCH_DATE_COLUMNS)
         winner_col = _first_existing(matches, _WINNER_COLUMNS)
         if not (team_a_col and team_b_col and date_col and winner_col):
-            return {}
+            self._results_lookup_cache = {}
+            return self._results_lookup_cache
 
         results: dict[tuple[str, str, str], str] = {}
         for _, row in matches.iterrows():
@@ -304,20 +330,50 @@ class IplCsvDataProvider(LiveDataProvider):
                 continue
             results[(team_a, team_b, match_date)] = winner
             results[(team_b, team_a, match_date)] = winner
-        return results
+        self._results_lookup_cache = results
+        return self._results_lookup_cache
 
     def _load_csv(self, filename: str) -> pd.DataFrame:
         path = self._dataset_dir / filename
         if not path.exists():
+            self._csv_cache.pop(filename, None)
             return pd.DataFrame()
+
+        mtime = path.stat().st_mtime
+        cached = self._csv_cache.get(filename)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+
+        self._clear_derived_caches()
         read_kwargs: dict[str, Any] = {}
         selected_columns = _CSV_USECOLS.get(filename)
         if selected_columns:
             read_kwargs["usecols"] = lambda column: _normalise_column_name(column) in selected_columns
         try:
-            return _normalise_columns(pd.read_csv(path, **read_kwargs))
+            frame = _normalise_columns(pd.read_csv(path, **read_kwargs))
         except pd.errors.EmptyDataError:
-            return pd.DataFrame()
+            frame = pd.DataFrame()
+
+        self._csv_cache[filename] = (mtime, frame)
+        return frame
+
+    def _head_to_head_lookup(self) -> dict[tuple[str, str], list[str]]:
+        if self._head_to_head_cache is not None:
+            return self._head_to_head_cache
+
+        matches = self._load_csv("matches.csv")
+        if matches.empty:
+            self._head_to_head_cache = {}
+        else:
+            self._head_to_head_cache = self._build_head_to_head_lookup(matches)
+        return self._head_to_head_cache
+
+    def _clear_derived_caches(self) -> None:
+        self._team_metrics_cache = None
+        self._team_leader_stats_cache = None
+        self._team_leader_names_cache = None
+        self._results_lookup_cache = None
+        self._head_to_head_cache = None
 
     def _build_team_metrics(self, matches: pd.DataFrame) -> dict[str, TeamMetrics]:
         points_table = self._load_csv("points_table.csv")

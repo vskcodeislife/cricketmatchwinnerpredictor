@@ -34,6 +34,11 @@ class MatchContextService:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._history = MatchHistoryProvider(settings.cricsheet_data_dir)
+        self._csv_provider = (
+            IplCsvDataProvider(settings.ipl_csv_data_dir)
+            if settings.ipl_csv_data_dir
+            else None
+        )
 
     def build_request(
         self,
@@ -103,9 +108,8 @@ class MatchContextService:
             team_a_leaders = iplt20_leaders.get(team_a, team_a_leaders)
             team_b_leaders = iplt20_leaders.get(team_b, team_b_leaders)
 
-        if self._settings.ipl_csv_data_dir:
-            csv_provider = IplCsvDataProvider(self._settings.ipl_csv_data_dir)
-            metrics = csv_provider.team_metrics_lookup()
+        if self._csv_provider is not None:
+            metrics = self._csv_provider.team_metrics_lookup()
             team_a_metrics = metrics.get(team_a)
             team_b_metrics = metrics.get(team_b)
             if team_a_metrics is not None:
@@ -117,13 +121,13 @@ class MatchContextService:
                 team_b_batting_strength = team_b_metrics.batting_strength
                 team_b_bowling_strength = team_b_metrics.bowling_strength
 
-            csv_h2h = csv_provider.head_to_head_pct(team_a, team_b, limit=7)
+            csv_h2h = self._csv_provider.head_to_head_pct(team_a, team_b, limit=7)
             if head_to_head == 0.5 and csv_h2h != 0.5:
                 head_to_head = csv_h2h
 
             # Fall back to Kaggle CSV leaders only when iplt20 feeds failed
             if not iplt20_leaders:
-                csv_leaders = csv_provider.team_leader_stats_lookup()
+                csv_leaders = self._csv_provider.team_leader_stats_lookup()
                 team_a_leaders = csv_leaders.get(team_a, team_a_leaders)
                 team_b_leaders = csv_leaders.get(team_b, team_b_leaders)
 

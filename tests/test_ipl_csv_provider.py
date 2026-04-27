@@ -253,3 +253,59 @@ def test_tracker_uses_local_csv_results_when_other_sources_are_missing(monkeypat
     assert summary["updated"] == 1
     assert saved is not None
     assert saved["actual_winner"] == "Lucknow Super Giants"
+
+
+def test_ipl_csv_provider_reuses_loaded_frames_and_derived_lookups(monkeypatch, tmp_path) -> None:
+    dataset_dir = tmp_path / "ipl_csv"
+    today = date.today()
+    _write_dataset_csvs(
+        dataset_dir,
+        matches=[
+            {
+                "match_id": 1,
+                "date": today.isoformat(),
+                "team_1": "CSK",
+                "team_2": "MI",
+                "venue": "MA Chidambaram Stadium",
+                "winner": "",
+                "status": "upcoming",
+            }
+        ],
+        points_table=[
+            {"team": "CSK", "played": 3, "won": 2, "form": "W L W"},
+            {"team": "MI", "played": 3, "won": 1, "form": "L W L"},
+        ],
+        deliveries=[
+            {"match_id": 1, "inning": 1, "batting_team": "CSK", "bowling_team": "MI", "total_runs": 180},
+            {"match_id": 1, "inning": 2, "batting_team": "MI", "bowling_team": "CSK", "total_runs": 170},
+        ],
+        orange_cap=[],
+        purple_cap=[],
+        squads=[],
+    )
+
+    provider = IplCsvDataProvider(dataset_dir)
+    read_counts: dict[str, int] = {}
+    original_load_csv = provider._load_csv
+
+    def counting_load_csv(filename: str):
+        read_counts[filename] = read_counts.get(filename, 0) + 1
+        return original_load_csv(filename)
+
+    monkeypatch.setattr(provider, "_load_csv", counting_load_csv)
+
+    provider.team_metrics_lookup()
+    provider.team_metrics_lookup()
+    provider.team_leader_stats_lookup()
+    provider.team_leader_stats_lookup()
+    provider.head_to_head_pct("Chennai Super Kings", "Mumbai Indians")
+    provider.head_to_head_pct("Chennai Super Kings", "Mumbai Indians")
+    provider.fetch_results_lookup()
+    provider.fetch_results_lookup()
+
+    assert read_counts["matches.csv"] == 3
+    assert read_counts["points_table.csv"] == 1
+    assert read_counts["deliveries.csv"] == 2
+    assert read_counts["orange_cap.csv"] == 1
+    assert read_counts["purple_cap.csv"] == 1
+    assert read_counts["squads.csv"] == 1
